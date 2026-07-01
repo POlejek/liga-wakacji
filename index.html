@@ -104,6 +104,13 @@
   .rank-points .pts-lbl{ display:block; font-size:9px; font-weight:500; color:rgba(244,241,232,0.4); text-transform:uppercase; letter-spacing:.05em;}
   .form-grid{ display:flex; gap:3px; margin-top:5px;}
   .sq{ width:13px; height:13px; border-radius:3px; border:1px solid var(--line); background:transparent;}
+  .coach-table-card{ background:var(--navy-panel); border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-bottom:9px;}
+  .coach-table-head{ display:flex; align-items:center; gap:12px;}
+  .coach-task-list{ margin-top:10px; border-top:1px solid var(--line); padding-top:10px; display:flex; flex-direction:column; gap:5px;}
+  .coach-task-row{ display:flex; align-items:baseline; gap:8px; font-size:12.5px;}
+  .coach-task-date{ font-family:var(--font-mono); color:rgba(244,241,232,0.45); flex-shrink:0; white-space:nowrap;}
+  .coach-task-name{ flex:1; min-width:0;}
+  .coach-task-pts{ font-family:var(--font-mono); color:var(--amber); flex-shrink:0;}
   .sq.filled{ background:var(--amber); border-color:var(--amber); box-shadow:0 0 5px rgba(240,169,57,0.5);}
 
   /* ---------- Coach ---------- */
@@ -269,6 +276,10 @@
 
         <h2 class="section-title" style="margin-top:24px;">Lista aktywności</h2>
         <div id="coachActivityList"></div>
+
+        <h2 class="section-title" style="margin-top:24px;">Tabela zawodników</h2>
+        <p class="section-sub">Suma punktów oraz pełna lista wykonanych zadań z datą wykonania dla każdego zawodnika.</p>
+        <div id="coachTableWrap"><div class="loading">Ładowanie…</div></div>
 
         <div class="form-panel" style="margin-top:24px;">
           <h2 class="section-title" style="margin-bottom:8px;">Edytuj wyniki zawodników</h2>
@@ -697,6 +708,42 @@ function renderTable(){
   }).join('');
 }
 
+// ---------- coach: tabela zawodników ze szczegółami ----------
+function renderCoachTable(){
+  const wrap = document.getElementById('coachTableWrap');
+  if(!wrap) return;
+  if(!roster.length){
+    wrap.innerHTML = '<div class="empty-state">Tabela jest pusta — nikt jeszcze nie dołączył do drużyny.</div>';
+    return;
+  }
+  const rows = roster.map(p=>{
+    const key = slug(p.name);
+    const checks = (checksByPlayer[key] || []).slice().sort((a,b)=> (b.date+'-'+b.ts).localeCompare(a.date+'-'+a.ts));
+    return { name:p.name, total: calcTotal(checks), checks };
+  }).sort((a,b)=> b.total - a.total);
+
+  wrap.innerHTML = rows.map((r,i)=>{
+    const rankCls = (i===0 && r.total>0) ? 'rank-num gold' : 'rank-num';
+    const tasksHtml = r.checks.length
+      ? r.checks.map(c=>
+          '<div class="coach-task-row">' +
+            '<span class="coach-task-date">'+formatDatePL(c.date)+'</span>' +
+            '<span class="coach-task-name">'+escapeHtml(c.activityName)+(c.isBonus?' 🔥':'')+'</span>' +
+            '<span class="coach-task-pts">+'+c.points+'</span>' +
+          '</div>'
+        ).join('')
+      : '<p class="section-sub" style="margin:0;">Brak jeszcze wykonanych zadań.</p>';
+    return '<div class="coach-table-card">' +
+      '<div class="coach-table-head">' +
+        '<div class="'+rankCls+'">'+(i+1)+'</div>' +
+        '<div class="rank-body"><div class="rank-name">'+escapeHtml(r.name)+'</div></div>' +
+        '<div class="rank-points">'+r.total+'<span class="pts-lbl">pkt</span></div>' +
+      '</div>' +
+      '<div class="coach-task-list">'+tasksHtml+'</div>' +
+    '</div>';
+  }).join('');
+}
+
 // ---------- coach panel ----------
 function renderEmojiSelect(selected){
   const el = document.getElementById('emojiSelect');
@@ -865,6 +912,7 @@ async function handleResultAction(action, ts){
     try{ await savePlayerChecks(resultsPlayerKey, checksByPlayer[resultsPlayerKey]); }catch(e){ console.error(e); }
     renderResultsList();
     renderTable();
+    renderCoachTable();
     if(editingCheckTs===ts) resetResultForm();
   }
 }
@@ -901,6 +949,7 @@ document.getElementById('resultSaveBtn').addEventListener('click', async ()=>{
   catch(e){ msg.textContent='Błąd zapisu.'; msg.className='msg err'; return; }
   renderResultsList();
   renderTable();
+  renderCoachTable();
   resetResultForm();
 });
 
@@ -971,6 +1020,7 @@ async function unlockCoach(){
   renderCoachActivityList();
   await Promise.all([loadRoster(), loadAllChecks()]);   // świeże dane, w tym wpisy innych zawodników
   renderRosterList();
+  renderCoachTable();
   renderResultsPlayerSelect();
   document.getElementById('resultDateInput').value = todayStr();
   renderResultsActivitySelect();
@@ -991,7 +1041,7 @@ function renderRosterList(){
       if(!confirm('Usunąć "'+name+'" z listy zawodników? Zapisane wcześniej punkty zostaną w bazie, ale osoba zniknie z tabeli i listy wyboru.')) return;
       roster = roster.filter(p=>p.name!==name);
       try{ await saveRoster(); }catch(e){ console.error(e); }
-      renderPicker(); renderTable(); renderRosterList();
+      renderPicker(); renderTable(); renderRosterList(); renderCoachTable();
       renderResultsPlayerSelect(); renderResultsList();
     });
   });
@@ -1021,6 +1071,7 @@ document.getElementById('rosterImportBtn').addEventListener('click', async ()=>{
     renderPicker();
     renderTable();
     renderRosterList();
+    renderCoachTable();
     renderResultsPlayerSelect();
     renderResultsList();
   }catch(e){

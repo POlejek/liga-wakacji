@@ -187,7 +187,7 @@
         <p class="section-sub">Wybierz siebie z listy albo dopisz się, jeśli grasz pierwszy raz.</p>
         <div class="picker-grid" id="pickerGrid"></div>
         <div class="add-player">
-          <input type="text" id="newPlayerInput" placeholder="Twoje imię i nazwisko">
+          <input type="text" id="newPlayerInput" placeholder="Twoje imię i nazwisko" autocomplete="off" autocapitalize="words" spellcheck="false">
           <button class="btn" style="width:auto; padding:0 16px;" id="addPlayerBtn">Dodaj</button>
         </div>
         <p class="disclaimer">To wspólny dziennik drużyny — wpisy i punkty widzi cała ekipa.</p>
@@ -203,6 +203,7 @@
         <h2 class="section-title">Dzisiejsze aktywności</h2>
         <p class="section-sub">Zatikuj to, co zrobisz — punkty naliczą się od razu.</p>
         <div id="activityList"><div class="loading">Ładowanie…</div></div>
+        <button class="btn" id="saveGoToTableBtn" style="margin-top:14px;">ZAPISZ</button>
       </div>
     </section>
 
@@ -259,6 +260,33 @@
 
         <h2 class="section-title" style="margin-top:24px;">Lista aktywności</h2>
         <div id="coachActivityList"></div>
+
+        <div class="form-panel" style="margin-top:24px;">
+          <h2 class="section-title" style="margin-bottom:8px;">Edytuj wyniki zawodników</h2>
+          <p class="section-sub">Popraw, usuń albo dopisz zaliczenie za dowolny dzień — również wstecz.</p>
+          <div class="field">
+            <label for="resultsPlayerSelect">Zawodnik</label>
+            <select id="resultsPlayerSelect"></select>
+          </div>
+          <div class="row2">
+            <div class="field">
+              <label for="resultDateInput">Data</label>
+              <input type="date" id="resultDateInput">
+            </div>
+            <div class="field">
+              <label for="resultPointsInput">Punkty</label>
+              <input type="number" id="resultPointsInput" min="1" max="999" placeholder="10">
+            </div>
+          </div>
+          <div class="field">
+            <label for="resultsActivitySelect">Aktywność</label>
+            <select id="resultsActivitySelect"></select>
+          </div>
+          <button class="btn" id="resultSaveBtn">Dodaj wpis</button>
+          <button class="btn ghost" id="resultCancelEditBtn" style="display:none; margin-top:8px;">Anuluj edycję</button>
+          <p class="msg" id="resultMsg"></p>
+          <div id="resultsListWrap" style="margin-top:16px;"></div>
+        </div>
 
         <div class="form-panel" style="margin-top:24px;">
           <h2 class="section-title" style="margin-bottom:8px;">Skład drużyny</h2>
@@ -389,6 +417,8 @@ let checksByPlayer = {};
 let currentPlayer = null;
 let coachUnlocked = false;
 let editingActivityId = null;
+let resultsPlayerKey = null;
+let editingCheckTs = null;
 
 // ---------- storage helpers ----------
 async function loadRoster(){
@@ -700,12 +730,14 @@ async function handleCoachAction(action, id){
     await saveActivities();
     renderCoachActivityList();
     renderActivitiesScreen();
+    renderResultsActivitySelect();
   }else if(action==='delete'){
     if(!confirm('Usunąć aktywność "'+a.name+'"? Zapisane już punkty zawodników zostaną.')) return;
     activities = activities.filter(x=>x.id!==id);
     await saveActivities();
     renderCoachActivityList();
     renderActivitiesScreen();
+    renderResultsActivitySelect();
   }else if(action==='edit'){
     editingActivityId = id;
     document.getElementById('actNameInput').value = a.name;
@@ -721,8 +753,124 @@ async function handleCoachAction(action, id){
     await saveActivities();
     renderCoachActivityList();
     renderActivitiesScreen();
+    renderResultsActivitySelect();
   }
 }
+
+// ---------- coach: edytuj wyniki zawodników ----------
+function renderResultsPlayerSelect(){
+  const sel = document.getElementById('resultsPlayerSelect');
+  if(!roster.length){
+    sel.innerHTML = '<option value="">Brak zawodników</option>';
+    sel.disabled = true;
+    resultsPlayerKey = null;
+    return;
+  }
+  sel.disabled = false;
+  sel.innerHTML = roster.map(p=> '<option value="'+escapeHtml(slug(p.name))+'">'+escapeHtml(p.name)+'</option>').join('');
+  if(!resultsPlayerKey || !roster.some(p=> slug(p.name)===resultsPlayerKey)){
+    resultsPlayerKey = slug(roster[0].name);
+  }
+  sel.value = resultsPlayerKey;
+}
+function renderResultsActivitySelect(){
+  const sel = document.getElementById('resultsActivitySelect');
+  if(!activities.length){
+    sel.innerHTML = '<option value="">Brak aktywności</option>';
+    sel.disabled = true;
+    return;
+  }
+  sel.disabled = false;
+  sel.innerHTML = sortedByOrder(activities).map(a=> '<option value="'+a.id+'">'+escapeHtml(a.emoji+' '+a.name)+'</option>').join('');
+  const onChange = ()=>{
+    const a = activities.find(x=>x.id===sel.value);
+    if(a) document.getElementById('resultPointsInput').value = a.points;
+  };
+  sel.onchange = onChange;
+  onChange();
+}
+function renderResultsList(){
+  const wrap = document.getElementById('resultsListWrap');
+  if(!resultsPlayerKey){ wrap.innerHTML = ''; return; }
+  const checks = (checksByPlayer[resultsPlayerKey] || []).slice().sort((a,b)=> (b.date+'-'+b.ts).localeCompare(a.date+'-'+a.ts));
+  if(!checks.length){ wrap.innerHTML = '<p class="section-sub">Ten zawodnik nie ma jeszcze żadnych wpisów.</p>'; return; }
+  wrap.innerHTML = checks.map(c=>{
+    const bonusTag = c.isBonus ? ' <span style="color:var(--amber)">· bonus</span>' : '';
+    return '<div class="coach-activity-row">' +
+      '<div class="info"><div class="name">'+formatDatePL(c.date)+' · '+escapeHtml(c.activityName)+'</div>' +
+      '<div class="pts">'+c.points+' pkt'+bonusTag+'</div></div>' +
+      '<button class="icon-btn" data-result-action="edit" data-ts="'+c.ts+'" title="Edytuj">✏️</button>' +
+      '<button class="icon-btn" data-result-action="delete" data-ts="'+c.ts+'" title="Usuń">🗑️</button>' +
+    '</div>';
+  }).join('');
+  wrap.querySelectorAll('[data-result-action]').forEach(btn=>{
+    btn.addEventListener('click', ()=> handleResultAction(btn.dataset.resultAction, Number(btn.dataset.ts)));
+  });
+}
+function resetResultForm(){
+  editingCheckTs = null;
+  document.getElementById('resultDateInput').value = todayStr();
+  renderResultsActivitySelect();
+  document.getElementById('resultSaveBtn').textContent = 'Dodaj wpis';
+  document.getElementById('resultCancelEditBtn').style.display = 'none';
+}
+async function handleResultAction(action, ts){
+  if(!resultsPlayerKey) return;
+  const checks = checksByPlayer[resultsPlayerKey] || [];
+  const c = checks.find(x=>x.ts===ts);
+  if(!c) return;
+  if(action==='edit'){
+    editingCheckTs = ts;
+    document.getElementById('resultDateInput').value = c.date;
+    document.getElementById('resultPointsInput').value = c.points;
+    if(activities.some(a=>a.id===c.activityId)) document.getElementById('resultsActivitySelect').value = c.activityId;
+    document.getElementById('resultSaveBtn').textContent = 'Zapisz zmiany';
+    document.getElementById('resultCancelEditBtn').style.display = 'block';
+    document.getElementById('resultsPlayerSelect').scrollIntoView({behavior:'smooth', block:'center'});
+  }else if(action==='delete'){
+    if(!confirm('Usunąć wpis „'+c.activityName+'” ('+formatDatePL(c.date)+')?')) return;
+    checksByPlayer[resultsPlayerKey] = checks.filter(x=>x.ts!==ts);
+    try{ await savePlayerChecks(resultsPlayerKey, checksByPlayer[resultsPlayerKey]); }catch(e){ console.error(e); }
+    renderResultsList();
+    renderTable();
+    if(editingCheckTs===ts) resetResultForm();
+  }
+}
+document.getElementById('resultsPlayerSelect').addEventListener('change', (e)=>{
+  resultsPlayerKey = e.target.value || null;
+  resetResultForm();
+  renderResultsList();
+});
+document.getElementById('resultCancelEditBtn').addEventListener('click', resetResultForm);
+document.getElementById('resultSaveBtn').addEventListener('click', async ()=>{
+  const msg = document.getElementById('resultMsg');
+  if(!resultsPlayerKey){ msg.textContent='Najpierw dodaj zawodnika do składu.'; msg.className='msg err'; return; }
+  const date = document.getElementById('resultDateInput').value;
+  const activityId = document.getElementById('resultsActivitySelect').value;
+  const points = Number(document.getElementById('resultPointsInput').value);
+  const activity = activities.find(a=>a.id===activityId);
+  if(!date || !activity || !points || points<1){
+    msg.textContent = 'Wybierz datę, aktywność i podaj liczbę punktów większą od 0.';
+    msg.className = 'msg err';
+    return;
+  }
+  const checks = checksByPlayer[resultsPlayerKey] || [];
+  if(editingCheckTs !== null){
+    const c = checks.find(x=>x.ts===editingCheckTs);
+    if(c){ c.date=date; c.activityId=activityId; c.activityName=activity.name; c.points=points; }
+    msg.textContent = '✓ Zapisano zmiany.';
+  }else{
+    checks.push({activityId, activityName:activity.name, points, date, ts:Date.now()});
+    msg.textContent = '✓ Dodano wpis.';
+  }
+  msg.className = 'msg ok';
+  checksByPlayer[resultsPlayerKey] = checks;
+  try{ await savePlayerChecks(resultsPlayerKey, checks); }
+  catch(e){ msg.textContent='Błąd zapisu.'; msg.className='msg err'; return; }
+  renderResultsList();
+  renderTable();
+  resetResultForm();
+});
 
 document.getElementById('actCancelEditBtn').addEventListener('click', resetActivityForm);
 function resetActivityForm(){
@@ -761,6 +909,7 @@ document.getElementById('actSaveBtn').addEventListener('click', async ()=>{
   try{ await saveActivities(); }catch(e){ msg.textContent='Błąd zapisu.'; msg.className='msg err'; return; }
   renderCoachActivityList();
   renderActivitiesScreen();
+  renderResultsActivitySelect();
   resetActivityForm();
 });
 
@@ -780,13 +929,18 @@ document.getElementById('pinSubmitBtn').addEventListener('click', async ()=>{
     msg.textContent='Błędny PIN.'; msg.className='msg err';
   }
 });
-function unlockCoach(){
+async function unlockCoach(){
   coachUnlocked = true;
   document.getElementById('coachLocked').style.display='none';
   document.getElementById('coachPanel').style.display='block';
   renderEmojiSelect(EMOJI_OPTS[0]);
   renderCoachActivityList();
+  await Promise.all([loadRoster(), loadAllChecks()]);   // świeże dane, w tym wpisy innych zawodników
   renderRosterList();
+  renderResultsPlayerSelect();
+  document.getElementById('resultDateInput').value = todayStr();
+  renderResultsActivitySelect();
+  renderResultsList();
 }
 
 function renderRosterList(){
@@ -804,6 +958,7 @@ function renderRosterList(){
       roster = roster.filter(p=>p.name!==name);
       try{ await saveRoster(); }catch(e){ console.error(e); }
       renderPicker(); renderTable(); renderRosterList();
+      renderResultsPlayerSelect(); renderResultsList();
     });
   });
 }
@@ -832,6 +987,8 @@ document.getElementById('rosterImportBtn').addEventListener('click', async ()=>{
     renderPicker();
     renderTable();
     renderRosterList();
+    renderResultsPlayerSelect();
+    renderResultsList();
   }catch(e){
     console.error(e);
     msg.textContent = 'Błąd zapisu — spróbuj ponownie.';
@@ -852,18 +1009,21 @@ async function initPinScreen(){
 }
 
 // ---------- tabs ----------
+async function activateView(viewId){
+  document.querySelectorAll('nav.bottom button').forEach(b=> b.classList.toggle('active', b.dataset.view===viewId));
+  document.querySelectorAll('.view').forEach(v=> v.classList.toggle('active', v.id===viewId));
+  if(viewId==='view-table'){
+    await Promise.all([loadRoster(), loadAllChecks()]);   // świeże dane całej drużyny
+    renderTable();
+  }
+  if(viewId==='view-coach' && !coachUnlocked) initPinScreen();
+}
 document.querySelectorAll('nav.bottom button').forEach(btn=>{
-  btn.addEventListener('click', async ()=>{
-    document.querySelectorAll('nav.bottom button').forEach(b=>b.classList.remove('active'));
-    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
-    btn.classList.add('active');
-    document.getElementById(btn.dataset.view).classList.add('active');
-    if(btn.dataset.view==='view-table'){
-      await Promise.all([loadRoster(), loadAllChecks()]);   // świeże dane całej drużyny
-      renderTable();
-    }
-    if(btn.dataset.view==='view-coach' && !coachUnlocked) initPinScreen();
-  });
+  btn.addEventListener('click', ()=> activateView(btn.dataset.view));
+});
+document.getElementById('saveGoToTableBtn').addEventListener('click', ()=>{
+  enqueueToast('✓ Zapisano — sprawdź swoją pozycję w tabeli!');
+  activateView('view-table');
 });
 
 // ---------- init ----------

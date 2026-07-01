@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+<title>Liga Wakacji</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --turf:#2E6E4E; --turf-dark:#1D4A34; --chalk:#F4F1E8; --amber:#F0A939;
+    --navy:#14202B; --navy-panel:#1B2A36; --navy-panel-2:#223648;
+    --coral:#D65A45; --line:rgba(244,241,232,0.12);
+    --font-display:'Anton',sans-serif; --font-body:'Inter',sans-serif; --font-mono:'JetBrains Mono',monospace;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(ellipse 600px 350px at 30% -5%, rgba(240,169,57,0.10), transparent),
+      radial-gradient(ellipse 500px 300px at 100% 0%, rgba(46,110,78,0.18), transparent),
+      var(--navy);
+    color:var(--chalk); font-family:var(--font-body); min-height:100vh;
+  }
+  .app{ max-width:480px; margin:0 auto; min-height:100vh; padding-bottom: calc(78px + env(safe-area-inset-bottom)); position:relative;}
+
+  /* ---------- Top bar ---------- */
+  .topbar{
+    padding: 16px 18px 14px; background: var(--navy-panel); border-bottom:2px solid var(--turf);
+    position:sticky; top:0; z-index:20;
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+  }
+  .topbar h1{ font-family:var(--font-display); font-weight:400; font-size:22px; margin:0; letter-spacing:.01em;}
+  .topbar h1 span{ color:var(--amber); }
+  .who-pill{
+    font-family:var(--font-mono); font-size:11.5px; background:var(--navy-panel-2);
+    border:1px solid var(--line); border-radius:20px; padding:6px 12px; color:rgba(244,241,232,0.8);
+    display:flex; align-items:center; gap:6px; white-space:nowrap;
+  }
+  .who-pill button{ background:none; border:none; color:var(--amber); font-family:var(--font-mono); font-size:11px; cursor:pointer; padding:0; }
+
+  main{ padding: 18px; min-height: 60vh; }
+  .view{ display:none; }
+  .view.active{ display:block; }
+
+  h2.section-title{ font-family:var(--font-display); font-weight:400; font-size:19px; margin:0 0 4px; letter-spacing:.01em;}
+  .section-sub{ font-size:12.5px; color:rgba(244,241,232,0.55); margin:0 0 16px; line-height:1.4; }
+
+  /* ---------- Stat strip ---------- */
+  .stat-strip{ display:flex; gap:10px; margin-bottom:20px; }
+  .stat-box{ flex:1; background:var(--navy-panel); border:1px solid var(--line); border-radius:12px; padding:12px 10px; text-align:center; }
+  .stat-box .num{ font-family:var(--font-mono); font-size:22px; font-weight:700; color:var(--amber); display:block; line-height:1;}
+  .stat-box .lbl{ font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:rgba(244,241,232,0.5); margin-top:5px; display:block;}
+
+  /* ---------- Player picker ---------- */
+  .picker-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:18px;}
+  .picker-btn{
+    background:var(--navy-panel); border:1px solid var(--line); border-radius:12px; color:var(--chalk);
+    padding:16px 10px; font-family:var(--font-body); font-weight:700; font-size:14.5px; cursor:pointer; text-align:center;
+  }
+  .picker-btn:active{ background:var(--navy-panel-2); }
+  .add-player{ display:flex; gap:8px; margin-top:6px; }
+  .add-player input{ flex:1; }
+  .disclaimer{ font-size:11px; color:rgba(244,241,232,0.4); margin-top:16px; line-height:1.5; }
+
+  /* ---------- Activity cards ---------- */
+  .activity-card{
+    display:flex; align-items:center; gap:14px; background:var(--navy-panel); border:1px solid var(--line);
+    border-radius:14px; padding:14px 14px; margin-bottom:10px; cursor:pointer; transition:background .12s, border-color .12s;
+  }
+  .activity-card:active{ background:var(--navy-panel-2); }
+  .activity-card.done{ border-color:var(--turf); background: rgba(46,110,78,0.16); }
+  .activity-emoji{ font-size:26px; width:40px; text-align:center; flex-shrink:0;}
+  .activity-info{ flex:1; }
+  .activity-name{ font-weight:700; font-size:15px; }
+  .activity-points{ font-family:var(--font-mono); font-size:12px; color:var(--amber); margin-top:2px;}
+  .activity-check{
+    width:26px; height:26px; border-radius:50%; border:2px solid var(--line); flex-shrink:0;
+    display:flex; align-items:center; justify-content:center; font-size:14px; color:transparent;
+  }
+  .activity-card.done .activity-check{ background:var(--turf); border-color:var(--turf); color:var(--chalk); }
+  .empty-state{ text-align:center; padding:40px 20px; color:rgba(244,241,232,0.45); font-size:13.5px; line-height:1.6;}
+
+  /* ---------- Toast ---------- */
+  #toast{
+    position:fixed; left:50%; bottom: calc(90px + env(safe-area-inset-bottom)); transform:translate(-50%, 20px);
+    background:var(--turf); color:var(--chalk); font-weight:700; font-size:13.5px; padding:11px 20px;
+    border-radius:30px; box-shadow:0 8px 24px rgba(0,0,0,0.35); opacity:0; pointer-events:none; z-index:50;
+    transition:opacity .2s, transform .2s; max-width:90%; text-align:center;
+  }
+  #toast.show{ opacity:1; transform:translate(-50%, 0); }
+
+  /* ---------- League table (Tabela) ---------- */
+  .rank-card{ display:flex; align-items:center; gap:12px; background:var(--navy-panel); border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-bottom:9px;}
+  .rank-num{ font-family:var(--font-mono); font-size:16px; font-weight:700; color:rgba(244,241,232,0.4); width:22px; text-align:center; flex-shrink:0;}
+  .rank-num.gold{ color:var(--amber); }
+  .rank-body{ flex:1; min-width:0;}
+  .rank-name{ font-weight:700; font-size:14.5px;}
+  .rank-meta{ font-size:11.5px; color:rgba(244,241,232,0.5); margin-top:2px; display:flex; gap:10px; flex-wrap:wrap;}
+  .rank-points{ font-family:var(--font-mono); font-size:20px; font-weight:700; color:var(--amber); flex-shrink:0; text-align:right;}
+  .rank-points .pts-lbl{ display:block; font-size:9px; font-weight:500; color:rgba(244,241,232,0.4); text-transform:uppercase; letter-spacing:.05em;}
+  .form-grid{ display:flex; gap:3px; margin-top:5px;}
+  .sq{ width:13px; height:13px; border-radius:3px; border:1px solid var(--line); background:transparent;}
+  .sq.filled{ background:var(--amber); border-color:var(--amber); box-shadow:0 0 5px rgba(240,169,57,0.5);}
+
+  /* ---------- Coach ---------- */
+  .pin-box{ max-width:280px; margin:30px auto; text-align:center;}
+  .pin-box input{ text-align:center; letter-spacing:.3em; font-size:20px; font-family:var(--font-mono);}
+  label{ font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:rgba(244,241,232,0.6); display:block; margin-bottom:6px;}
+  input, select{
+    width:100%; background:var(--navy); border:1px solid var(--line); border-radius:9px; color:var(--chalk);
+    padding:12px 13px; font-family:var(--font-body); font-size:15px; outline:none;
+  }
+  input:focus, select:focus{ border-color:var(--amber);}
+  .row2{ display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+  .field{ margin-bottom:12px;}
+  button.btn{
+    background:var(--turf); color:var(--chalk); border:none; border-radius:10px; padding:13px;
+    font-family:var(--font-body); font-weight:700; font-size:14.5px; width:100%; cursor:pointer;
+  }
+  button.btn:active{ background:var(--turf-dark);}
+  button.btn.ghost{ background:transparent; border:1px solid var(--line); color:rgba(244,241,232,0.7);}
+  button.btn.danger{ background:transparent; border:1px solid var(--coral); color:var(--coral);}
+  .coach-activity-row{ display:flex; align-items:center; gap:10px; background:var(--navy-panel); border:1px solid var(--line); border-radius:11px; padding:11px 13px; margin-bottom:8px;}
+  .coach-activity-row .emoji{ font-size:20px; width:28px; text-align:center;}
+  .coach-activity-row .info{ flex:1;}
+  .coach-activity-row .info .name{ font-weight:700; font-size:14px;}
+  .coach-activity-row .info .pts{ font-family:var(--font-mono); font-size:11.5px; color:var(--amber);}
+  .coach-activity-row.inactive{ opacity:.4;}
+  .icon-btn{ background:none; border:none; color:rgba(244,241,232,0.6); font-size:16px; padding:6px; cursor:pointer;}
+  .form-panel{ background:var(--navy-panel); border:1px solid var(--line); border-radius:14px; padding:16px; margin-bottom:20px;}
+  .emoji-select{ display:flex; gap:7px; flex-wrap:wrap; margin-bottom:12px;}
+  .emoji-opt{ width:40px; height:40px; border-radius:9px; border:1px solid var(--line); background:var(--navy); font-size:19px; cursor:pointer; display:flex; align-items:center; justify-content:center;}
+  .emoji-opt.selected{ border-color:var(--amber); background:rgba(240,169,57,0.15);}
+  .msg{ font-size:12.5px; min-height:16px; margin-top:8px;}
+  .msg.ok{ color:var(--turf);}
+  .msg.err{ color:var(--coral);}
+
+  /* ---------- Bottom nav ---------- */
+  nav.bottom{
+    position:fixed; left:50%; bottom:0; transform:translateX(-50%); width:100%; max-width:480px;
+    display:flex; background:var(--navy-panel); border-top:1px solid var(--line);
+    padding: 8px 6px calc(8px + env(safe-area-inset-bottom)); z-index:30;
+  }
+  nav.bottom button{
+    flex:1; background:none; border:none; color:rgba(244,241,232,0.45); display:flex; flex-direction:column;
+    align-items:center; gap:3px; font-family:var(--font-body); font-size:10.5px; padding:6px 2px; cursor:pointer; font-weight:600;
+  }
+  nav.bottom button .icon{ font-size:20px; }
+  nav.bottom button.active{ color:var(--amber); }
+
+  .loading{ text-align:center; padding:40px; color:rgba(244,241,232,0.4); font-family:var(--font-mono); font-size:13px;}
+
+  /* ---------- Config warning banner ---------- */
+  #cfgWarn{ background:var(--coral); color:#fff; padding:10px 14px; text-align:center; font-size:12.5px; font-weight:600; line-height:1.4;}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="topbar">
+    <h1>LIGA <span>WAKACJI</span></h1>
+    <div class="who-pill" id="whoPill" style="display:none;">
+      👤 <span id="whoName"></span> <button id="switchPlayerBtn">zmień</button>
+    </div>
+  </div>
+
+  <main>
+
+    <!-- VIEW: AKTYWNOŚCI -->
+    <section class="view active" id="view-activities">
+
+      <div id="pickerScreen">
+        <h2 class="section-title">Kto dziś działa?</h2>
+        <p class="section-sub">Wybierz siebie z listy albo dopisz się, jeśli grasz pierwszy raz.</p>
+        <div class="picker-grid" id="pickerGrid"></div>
+        <div class="add-player">
+          <input type="text" id="newPlayerInput" placeholder="Twoje imię i nazwisko">
+          <button class="btn" style="width:auto; padding:0 16px;" id="addPlayerBtn">Dodaj</button>
+        </div>
+        <p class="disclaimer">To wspólny dziennik drużyny — wpisy i punkty widzi cała ekipa.</p>
+      </div>
+
+      <div id="activitiesScreen" style="display:none;">
+        <div class="stat-strip">
+          <div class="stat-box"><span class="num" id="statToday">–</span><span class="lbl">Pkt dziś</span></div>
+          <div class="stat-box"><span class="num" id="statStreak">–</span><span class="lbl">Seria</span></div>
+          <div class="stat-box"><span class="num" id="statTotal">–</span><span class="lbl">Suma pkt</span></div>
+        </div>
+        <p class="section-sub" id="nextMilestone" style="margin-top:-10px;"></p>
+        <h2 class="section-title">Dzisiejsze aktywności</h2>
+        <p class="section-sub">Zatikuj to, co zrobisz — punkty naliczą się od razu.</p>
+        <div id="activityList"><div class="loading">Ładowanie…</div></div>
+      </div>
+    </section>
+
+    <!-- VIEW: TABELA -->
+    <section class="view" id="view-table">
+      <h2 class="section-title">Tabela ligowa</h2>
+      <p class="section-sub">Punkty za wszystkie zaliczone aktywności od początku wakacji.</p>
+      <div id="tableWrap"><div class="loading">Ładowanie…</div></div>
+    </section>
+
+    <!-- VIEW: TRENER -->
+    <section class="view" id="view-coach">
+      <div id="coachLocked">
+        <div class="pin-box">
+          <h2 class="section-title" id="pinTitle">Panel trenera</h2>
+          <p class="section-sub" id="pinSub">Podaj PIN, żeby zarządzać aktywnościami.</p>
+          <div class="field"><input type="password" inputmode="numeric" id="pinInput" placeholder="••••" maxlength="8"></div>
+          <button class="btn" id="pinSubmitBtn">Odblokuj</button>
+          <p class="msg" id="pinMsg"></p>
+        </div>
+      </div>
+
+      <div id="coachPanel" style="display:none;">
+        <h2 class="section-title">Zarządzaj aktywnościami</h2>
+        <p class="section-sub">Dodawaj wyzwania i przypisuj im punkty. Zawodnicy zobaczą tylko aktywne.</p>
+
+        <div class="form-panel">
+          <div class="field">
+            <label for="actNameInput">Nazwa aktywności</label>
+            <input type="text" id="actNameInput" placeholder="np. Bieg 5 km">
+          </div>
+          <div class="field">
+            <label>Ikona</label>
+            <div class="emoji-select" id="emojiSelect"></div>
+          </div>
+          <div class="field">
+            <label for="actPointsInput">Punkty</label>
+            <input type="number" id="actPointsInput" min="1" max="100" placeholder="10">
+          </div>
+          <div class="field">
+            <label for="actDeadlineInput">Aktywna do (opcjonalnie)</label>
+            <input type="date" id="actDeadlineInput">
+            <p class="section-sub" style="margin:6px 0 0;">Zostaw puste dla aktywności stałej. Po tej dacie zniknie z listy do odznaczenia u zawodników.</p>
+          </div>
+          <button class="btn" id="actSaveBtn">Dodaj aktywność</button>
+          <button class="btn ghost" id="actCancelEditBtn" style="display:none; margin-top:8px;">Anuluj edycję</button>
+          <p class="msg" id="actMsg"></p>
+        </div>
+
+        <h2 class="section-title" style="margin-top:24px;">Lista aktywności</h2>
+        <div id="coachActivityList"></div>
+
+        <div class="form-panel" style="margin-top:24px;">
+          <h2 class="section-title" style="margin-bottom:8px;">Skład drużyny</h2>
+          <p class="section-sub">Wklej listę zawodników — każdy w nowej linii albo oddzielony przecinkiem. Osoby już zapisane na liście zostaną pominięte.</p>
+          <div class="field">
+            <textarea id="rosterImportInput" rows="5" placeholder="Kowalski Jan&#10;Nowak Anna&#10;Wiśniewski Piotr" style="width:100%; background:var(--navy); border:1px solid var(--line); border-radius:9px; color:var(--chalk); padding:12px 13px; font-family:var(--font-body); font-size:14.5px; resize:vertical;"></textarea>
+          </div>
+          <button class="btn" id="rosterImportBtn">Importuj listę</button>
+          <p class="msg" id="rosterMsg"></p>
+          <div id="rosterListWrap" style="margin-top:16px;"></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <div id="toast"></div>
+
+  <nav class="bottom">
+    <button data-view="view-activities" class="active"><span class="icon">📋</span>Aktywności</button>
+    <button data-view="view-table"><span class="icon">🏆</span>Tabela</button>
+    <button data-view="view-coach"><span class="icon">🔐</span>Trener</button>
+  </nav>
+
+</div>
+
+<!-- =========================================================================
+     1) WARSTWA DANYCH: Firebase Firestore zamiast window.storage
+     -------------------------------------------------------------------------
+     WKLEJ TU swój firebaseConfig z konsoli Firebase (Ustawienia projektu →
+     Twoje aplikacje → Web). To jedyne miejsce, które musisz zmienić.
+     Klucz apiKey jest jawny z założenia — bezpieczeństwo daje reguły Firestore
+     (patrz README.md).
+     ========================================================================= -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import {
+    getFirestore, doc, getDoc, setDoc, deleteDoc,
+    collection, query, where, getDocs
+  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey:            "AIzaSyCi5ulsuTyQE2jqg0XYp7w-ORrVnjRSj1Q",
+    authDomain:        "liga-wakacyjna.firebaseapp.com"",
+    projectId:         "liga-wakacyjna",
+    storageBucket:     "liga-wakacyjna.firebasestorage.app",
+    messagingSenderId: "75493027234",
+    appId:             "1:75493027234:web:0bf7ee76c2acbbaef8d6fb"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db  = getFirestore(app);
+  const COL = "liga";                       // jedna kolekcja na wszystkie klucze
+  const encId = k => encodeURIComponent(k); // bezpieczne ID dokumentu
+
+  // Nakładka zgodna z window.storage używanym w apce.
+  // Drugi argument (shared) jest ignorowany — dane są zawsze wspólne dla drużyny.
+  window.storage = {
+    async get(key){
+      const snap = await getDoc(doc(db, COL, encId(key)));
+      return snap.exists() ? { key, value: snap.data().v, shared:true } : null;
+    },
+    async set(key, value){
+      await setDoc(doc(db, COL, encId(key)), { k:key, v:value });
+      return { key, value, shared:true };
+    },
+    async delete(key){
+      await deleteDoc(doc(db, COL, encId(key)));
+      return { key, deleted:true, shared:true };
+    },
+    async list(prefix=""){
+      const q = query(
+        collection(db, COL),
+        where("k", ">=", prefix),
+        where("k", "<",  prefix + "\uf8ff")
+      );
+      const qs = await getDocs(q);
+      const keys = [];
+      qs.forEach(d => keys.push(d.data().k));
+      return { keys, prefix, shared:true };
+    }
+  };
+
+  // Ostrzeżenie, gdy config nie został uzupełniony.
+  if (String(firebaseConfig.apiKey).includes("PASTE")) {
+    const warn = () => {
+      const b = document.createElement("div");
+      b.id = "cfgWarn";
+      b.textContent = "⚠️ Uzupełnij firebaseConfig w index.html — bez tego apka nie zapisze danych.";
+      document.body.prepend(b);
+    };
+    if (document.body) warn(); else document.addEventListener("DOMContentLoaded", warn);
+  }
+</script>
+
+<!-- =========================================================================
+     2) LOGIKA APLIKACJI (bez zmian wobec oryginału — korzysta z window.storage)
+     Uwaga: to moduł, żeby wykonał się PO ustawieniu window.storage powyżej.
+     ========================================================================= -->
+<script type="module">
+const EMOJI_OPTS = ['🏃','🚴','🏊','🦵','⚽','🧘','🤸','⛹️','🏋️','⭐'];
+const STREAK_MILESTONES = [
+  {days:3, pts:10}, {days:5, pts:20}, {days:10, pts:50}, {days:15, pts:100},
+  {days:20, pts:200}, {days:25, pts:300}, {days:30, pts:500}
+];
+const DEFAULT_ACTIVITIES = [
+  {id:'a1', name:'Bieg 5 km', points:10, emoji:'🏃', active:true},
+  {id:'a2', name:'Rower 15 km', points:10, emoji:'🚴', active:true},
+  {id:'a3', name:'Pływanie 1 km', points:15, emoji:'🏊', active:true},
+  {id:'a4', name:'Mobilność bioder', points:5, emoji:'🦵', active:true},
+  {id:'a5', name:'Piłka / żonglerka', points:5, emoji:'⚽', active:true},
+];
+
+function pad(n){ return n<10 ? '0'+n : ''+n; }
+function toDateStr(d){ return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); }
+function todayStr(){ return toDateStr(new Date()); }
+function slug(name){ return name.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,''); }
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function mondayOf(dateStr){ const d=new Date(dateStr); const day=d.getDay(); const diff=(day===0?-6:1-day); d.setDate(d.getDate()+diff); return toDateStr(d); }
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+function formatDatePL(dateStr){ if(!dateStr) return ''; const [y,m,d]=dateStr.split('-'); return d+'.'+m+'.'+y; }
+function isActivityAvailable(a){ return a.active && (!a.deadline || todayStr() <= a.deadline); }
+
+let roster = [];
+let activities = [];
+let checksByPlayer = {};
+let currentPlayer = null;
+let coachUnlocked = false;
+let editingActivityId = null;
+
+// ---------- storage helpers ----------
+async function loadRoster(){
+  try{ const r = await window.storage.get('roster', true); roster = r ? JSON.parse(r.value) : []; }
+  catch(e){ roster = []; }
+}
+async function saveRoster(){ try{ await window.storage.set('roster', JSON.stringify(roster), true); }catch(e){ console.error(e); } }
+
+async function loadActivities(){
+  try{
+    const r = await window.storage.get('activities', true);
+    activities = r ? JSON.parse(r.value) : null;
+  }catch(e){ activities = null; }
+  if(!activities){
+    activities = DEFAULT_ACTIVITIES.slice();
+    try{ await window.storage.set('activities', JSON.stringify(activities), true); }catch(e){}
+  }
+}
+async function saveActivities(){ try{ await window.storage.set('activities', JSON.stringify(activities), true); }catch(e){ console.error(e); } }
+
+async function loadAllChecks(){
+  checksByPlayer = {};
+  try{
+    const list = await window.storage.list('checks:', true);
+    const keys = (list && list.keys) ? list.keys : [];
+    for(const k of keys){
+      try{
+        const res = await window.storage.get(k, true);
+        if(res){ checksByPlayer[k.slice('checks:'.length)] = JSON.parse(res.value); }
+      }catch(e){}
+    }
+  }catch(e){ console.error(e); }
+}
+async function savePlayerChecks(key, checks){ await window.storage.set('checks:'+key, JSON.stringify(checks), true); }
+
+async function loadPin(){
+  try{ const r = await window.storage.get('coach_pin', true); return r ? r.value : null; }
+  catch(e){ return null; }
+}
+async function savePin(pin){ try{ await window.storage.set('coach_pin', pin, true); }catch(e){ console.error(e); } }
+
+// ---------- calculations ----------
+function calcStreak(checks){
+  const byDate = {}; checks.forEach(c=> byDate[c.date]=true);
+  let cursor = new Date();
+  if(!byDate[toDateStr(cursor)]) cursor.setDate(cursor.getDate()-1);
+  let streak=0;
+  while(byDate[toDateStr(cursor)]){ streak++; cursor.setDate(cursor.getDate()-1); }
+  return streak;
+}
+function calcTotal(checks){ return checks.reduce((s,c)=> s+Number(c.points||0), 0); }
+function calcToday(checks){ const t=todayStr(); return checks.filter(c=>c.date===t).reduce((s,c)=> s+Number(c.points||0),0); }
+function last7(checks){
+  const byDate = {}; checks.forEach(c=> byDate[c.date]=true);
+  const out=[];
+  for(let i=6;i>=0;i--){ const d=new Date(); d.setDate(d.getDate()-i); out.push(!!byDate[toDateStr(d)]); }
+  return out;
+}
+function awardStreakBonuses(checks, today){
+  const streak = calcStreak(checks);
+  const awarded = new Set(checks.filter(c=>c.isBonus).map(c=>c.streakDays));
+  const messages = [];
+  STREAK_MILESTONES.forEach(m=>{
+    if(streak >= m.days && !awarded.has(m.days)){
+      checks.push({activityId:'streak-'+m.days, activityName:'Seria '+m.days+' dni', points:m.pts, date:today, ts:Date.now(), isBonus:true, streakDays:m.days});
+      awarded.add(m.days);
+      messages.push('🔥 Seria '+m.days+' dni! +'+m.pts+' pkt bonus');
+    }
+  });
+  return messages;
+}
+function nextMilestoneText(streak){
+  const next = STREAK_MILESTONES.find(m=> m.days > streak);
+  if(!next) return '🏆 Zdobyto wszystkie bonusy za serię — szacunek!';
+  return 'Następny bonus: seria '+next.days+' dni → +'+next.pts+' pkt (jeszcze '+(next.days-streak)+')';
+}
+
+// ---------- rendering: player picker ----------
+function renderPicker(){
+  const grid = document.getElementById('pickerGrid');
+  if(!roster.length){
+    grid.innerHTML = '<p class="section-sub" style="grid-column:1/-1;">Nikt jeszcze nie dołączył — bądź pierwszy!</p>';
+  }else{
+    grid.innerHTML = roster.map(p => '<button class="picker-btn" data-name="'+escapeHtml(p.name)+'">'+escapeHtml(p.name)+'</button>').join('');
+    grid.querySelectorAll('.picker-btn').forEach(btn=>{
+      btn.addEventListener('click', ()=> selectPlayer(btn.dataset.name));
+    });
+  }
+}
+async function selectPlayer(name){
+  currentPlayer = name;
+  document.getElementById('pickerScreen').style.display = 'none';
+  document.getElementById('activitiesScreen').style.display = 'block';
+  document.getElementById('whoPill').style.display = 'flex';
+  document.getElementById('whoName').textContent = name;
+  await loadAllChecks();          // odśwież dane z bazy (mogli grać inni)
+  renderActivitiesScreen();
+}
+function deselectPlayer(){
+  currentPlayer = null;
+  document.getElementById('pickerScreen').style.display = 'block';
+  document.getElementById('activitiesScreen').style.display = 'none';
+  document.getElementById('whoPill').style.display = 'none';
+  renderPicker();
+}
+
+document.getElementById('addPlayerBtn').addEventListener('click', async ()=>{
+  const input = document.getElementById('newPlayerInput');
+  const name = input.value.trim();
+  if(!name) return;
+  const key = slug(name);
+  if(!roster.some(p=>slug(p.name)===key)){
+    roster.push({name});
+    await saveRoster();
+  }
+  input.value='';
+  await selectPlayer(name);
+});
+document.getElementById('switchPlayerBtn').addEventListener('click', deselectPlayer);
+
+// ---------- rendering: activities screen ----------
+function renderActivitiesScreen(){
+  const key = slug(currentPlayer);
+  const checks = checksByPlayer[key] || [];
+  const streak = calcStreak(checks);
+  document.getElementById('statToday').textContent = calcToday(checks);
+  document.getElementById('statStreak').textContent = streak;
+  document.getElementById('statTotal').textContent = calcTotal(checks);
+  document.getElementById('nextMilestone').textContent = nextMilestoneText(streak);
+
+  const active = activities.filter(isActivityAvailable);
+  const today = todayStr();
+  const doneToday = new Set(checks.filter(c=>c.date===today).map(c=>c.activityId));
+
+  const wrap = document.getElementById('activityList');
+  if(!active.length){
+    wrap.innerHTML = '<div class="empty-state">Trener nie dodał jeszcze żadnych aktywności. Zajrzyj później! ⚽</div>';
+    return;
+  }
+  wrap.innerHTML = active.map(a=>{
+    const isDone = doneToday.has(a.id);
+    const deadlineBadge = a.deadline ? ' · <span style="color:var(--coral)">do '+formatDatePL(a.deadline)+'</span>' : '';
+    return '<div class="activity-card '+(isDone?'done':'')+'" data-id="'+a.id+'">' +
+      '<div class="activity-emoji">'+a.emoji+'</div>' +
+      '<div class="activity-info"><div class="activity-name">'+escapeHtml(a.name)+'</div>' +
+      '<div class="activity-points">+'+a.points+' pkt'+deadlineBadge+'</div></div>' +
+      '<div class="activity-check">✓</div>' +
+    '</div>';
+  }).join('');
+
+  wrap.querySelectorAll('.activity-card').forEach(card=>{
+    card.addEventListener('click', ()=> toggleActivity(card.dataset.id));
+  });
+}
+
+async function toggleActivity(activityId){
+  const key = slug(currentPlayer);
+  const checks = checksByPlayer[key] || [];
+  const today = todayStr();
+  const activity = activities.find(a=>a.id===activityId);
+  if(!activity) return;
+
+  const existingIdx = checks.findIndex(c=> c.date===today && c.activityId===activityId);
+  if(existingIdx >= 0){
+    checks.splice(existingIdx,1);
+    enqueueToast('Odznaczono: '+activity.name);
+  }else{
+    checks.push({activityId, activityName:activity.name, points:activity.points, date:today, ts:Date.now()});
+    enqueueToast('✓ +'+activity.points+' pkt — '+activity.name);
+    awardStreakBonuses(checks, today).forEach(msg => enqueueToast(msg));
+  }
+  checksByPlayer[key] = checks;
+  renderActivitiesScreen();
+  try{ await savePlayerChecks(key, checks); }
+  catch(e){ console.error(e); enqueueToast('Błąd zapisu — spróbuj ponownie'); }
+}
+
+let toastQueue = [];
+let toastShowing = false;
+function enqueueToast(text){
+  toastQueue.push(text);
+  processToastQueue();
+}
+function processToastQueue(){
+  if(toastShowing || !toastQueue.length) return;
+  toastShowing = true;
+  const text = toastQueue.shift();
+  const t = document.getElementById('toast');
+  t.textContent = text;
+  t.classList.add('show');
+  setTimeout(()=>{
+    t.classList.remove('show');
+    setTimeout(()=>{ toastShowing = false; processToastQueue(); }, 250);
+  }, 1900);
+}
+
+// ---------- rendering: league table ----------
+function renderTable(){
+  const wrap = document.getElementById('tableWrap');
+  if(!roster.length){
+    wrap.innerHTML = '<div class="empty-state">Tabela jest pusta — pierwsza zatikowana aktywność ją otworzy.</div>';
+    return;
+  }
+  const rows = roster.map(p=>{
+    const key = slug(p.name);
+    const checks = checksByPlayer[key] || [];
+    return { name:p.name, total: calcTotal(checks), streak: calcStreak(checks), form: last7(checks) };
+  }).sort((a,b)=> b.total - a.total);
+
+  document.getElementById('tableWrap').innerHTML = rows.map((r,i)=>{
+    const rankCls = (i===0 && r.total>0) ? 'rank-num gold' : 'rank-num';
+    const formHtml = r.form.map(f=> '<div class="sq '+(f?'filled':'')+'"></div>').join('');
+    return '<div class="rank-card">' +
+      '<div class="'+rankCls+'">'+(i+1)+'</div>' +
+      '<div class="rank-body">' +
+        '<div class="rank-name">'+escapeHtml(r.name)+'</div>' +
+        '<div class="rank-meta"><span>Seria: '+r.streak+(r.streak>0?' 🔥':'')+'</span></div>' +
+        '<div class="form-grid">'+formHtml+'</div>' +
+      '</div>' +
+      '<div class="rank-points">'+r.total+'<span class="pts-lbl">pkt</span></div>' +
+    '</div>';
+  }).join('');
+}
+
+// ---------- coach panel ----------
+function renderEmojiSelect(selected){
+  const el = document.getElementById('emojiSelect');
+  el.innerHTML = EMOJI_OPTS.map(e=> '<div class="emoji-opt '+(e===selected?'selected':'')+'" data-emoji="'+e+'">'+e+'</div>').join('');
+  el.querySelectorAll('.emoji-opt').forEach(o=>{
+    o.addEventListener('click', ()=>{
+      el.querySelectorAll('.emoji-opt').forEach(x=>x.classList.remove('selected'));
+      o.classList.add('selected');
+    });
+  });
+}
+function getSelectedEmoji(){
+  const sel = document.querySelector('.emoji-opt.selected');
+  return sel ? sel.dataset.emoji : EMOJI_OPTS[0];
+}
+
+function renderCoachActivityList(){
+  const wrap = document.getElementById('coachActivityList');
+  if(!activities.length){ wrap.innerHTML = '<p class="section-sub">Brak aktywności — dodaj pierwszą powyżej.</p>'; return; }
+  wrap.innerHTML = activities.map(a=>{
+    const isExpired = a.deadline && todayStr() > a.deadline;
+    const dimmed = !a.active || isExpired;
+    let statusText = a.active ? 'aktywna' : 'wyłączona';
+    let deadlineText = '';
+    if(a.deadline){ deadlineText = ' · termin: '+formatDatePL(a.deadline) + (isExpired ? ' (minął)' : ''); }
+    return '<div class="coach-activity-row '+(dimmed?'inactive':'')+'">' +
+      '<div class="emoji">'+a.emoji+'</div>' +
+      '<div class="info"><div class="name">'+escapeHtml(a.name)+'</div><div class="pts">'+a.points+' pkt · '+statusText+deadlineText+'</div></div>' +
+      '<button class="icon-btn" data-action="toggle" data-id="'+a.id+'" title="Włącz/wyłącz">'+(a.active?'👁️':'🚫')+'</button>' +
+      '<button class="icon-btn" data-action="edit" data-id="'+a.id+'" title="Edytuj">✏️</button>' +
+      '<button class="icon-btn" data-action="delete" data-id="'+a.id+'" title="Usuń">🗑️</button>' +
+    '</div>';
+  }).join('');
+
+  wrap.querySelectorAll('[data-action]').forEach(btn=>{
+    btn.addEventListener('click', ()=> handleCoachAction(btn.dataset.action, btn.dataset.id));
+  });
+}
+
+async function handleCoachAction(action, id){
+  const a = activities.find(x=>x.id===id);
+  if(!a) return;
+  if(action==='toggle'){
+    a.active = !a.active;
+    await saveActivities();
+    renderCoachActivityList();
+    renderActivitiesScreen();
+  }else if(action==='delete'){
+    if(!confirm('Usunąć aktywność "'+a.name+'"? Zapisane już punkty zawodników zostaną.')) return;
+    activities = activities.filter(x=>x.id!==id);
+    await saveActivities();
+    renderCoachActivityList();
+    renderActivitiesScreen();
+  }else if(action==='edit'){
+    editingActivityId = id;
+    document.getElementById('actNameInput').value = a.name;
+    document.getElementById('actPointsInput').value = a.points;
+    document.getElementById('actDeadlineInput').value = a.deadline || '';
+    renderEmojiSelect(a.emoji);
+    document.getElementById('actSaveBtn').textContent = 'Zapisz zmiany';
+    document.getElementById('actCancelEditBtn').style.display = 'block';
+    document.getElementById('actNameInput').scrollIntoView({behavior:'smooth', block:'center'});
+  }
+}
+
+document.getElementById('actCancelEditBtn').addEventListener('click', resetActivityForm);
+function resetActivityForm(){
+  editingActivityId = null;
+  document.getElementById('actNameInput').value = '';
+  document.getElementById('actPointsInput').value = '';
+  document.getElementById('actDeadlineInput').value = '';
+  renderEmojiSelect(EMOJI_OPTS[0]);
+  document.getElementById('actSaveBtn').textContent = 'Dodaj aktywność';
+  document.getElementById('actCancelEditBtn').style.display = 'none';
+}
+
+document.getElementById('actSaveBtn').addEventListener('click', async ()=>{
+  const name = document.getElementById('actNameInput').value.trim();
+  const points = Number(document.getElementById('actPointsInput').value);
+  const deadline = document.getElementById('actDeadlineInput').value || null;
+  const emoji = getSelectedEmoji();
+  const msg = document.getElementById('actMsg');
+  if(!name || !points || points<1){
+    msg.textContent = 'Podaj nazwę i liczbę punktów większą od 0.';
+    msg.className = 'msg err';
+    return;
+  }
+  if(editingActivityId){
+    const a = activities.find(x=>x.id===editingActivityId);
+    if(a){ a.name=name; a.points=points; a.emoji=emoji; a.deadline=deadline; }
+    msg.textContent = '✓ Zapisano zmiany.';
+  }else{
+    activities.push({id:uid(), name, points, emoji, deadline, active:true});
+    msg.textContent = '✓ Dodano aktywność.';
+  }
+  msg.className = 'msg ok';
+  try{ await saveActivities(); }catch(e){ msg.textContent='Błąd zapisu.'; msg.className='msg err'; return; }
+  renderCoachActivityList();
+  renderActivitiesScreen();
+  resetActivityForm();
+});
+
+// ---------- coach PIN gate ----------
+document.getElementById('pinSubmitBtn').addEventListener('click', async ()=>{
+  const val = document.getElementById('pinInput').value.trim();
+  const msg = document.getElementById('pinMsg');
+  if(!val){ msg.textContent='Wpisz PIN.'; msg.className='msg err'; return; }
+  const storedPin = await loadPin();
+  if(!storedPin){
+    if(val.length < 4){ msg.textContent='PIN musi mieć min. 4 znaki.'; msg.className='msg err'; return; }
+    await savePin(val);
+    unlockCoach();
+  }else if(val === storedPin){
+    unlockCoach();
+  }else{
+    msg.textContent='Błędny PIN.'; msg.className='msg err';
+  }
+});
+function unlockCoach(){
+  coachUnlocked = true;
+  document.getElementById('coachLocked').style.display='none';
+  document.getElementById('coachPanel').style.display='block';
+  renderEmojiSelect(EMOJI_OPTS[0]);
+  renderCoachActivityList();
+  renderRosterList();
+}
+
+function renderRosterList(){
+  const wrap = document.getElementById('rosterListWrap');
+  if(!roster.length){ wrap.innerHTML = '<p class="section-sub">Lista jest pusta — zaimportuj zawodników powyżej.</p>'; return; }
+  wrap.innerHTML = '<p class="section-sub" style="margin-bottom:8px;">Na liście: '+roster.length+' zawodników</p>' +
+    roster.map(p=>
+      '<div class="coach-activity-row"><div class="info"><div class="name">'+escapeHtml(p.name)+'</div></div>' +
+      '<button class="icon-btn" data-remove="'+escapeHtml(p.name)+'" title="Usuń z listy">🗑️</button></div>'
+    ).join('');
+  wrap.querySelectorAll('[data-remove]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const name = btn.dataset.remove;
+      if(!confirm('Usunąć "'+name+'" z listy zawodników? Zapisane wcześniej punkty zostaną w bazie, ale osoba zniknie z tabeli i listy wyboru.')) return;
+      roster = roster.filter(p=>p.name!==name);
+      try{ await saveRoster(); }catch(e){ console.error(e); }
+      renderPicker(); renderTable(); renderRosterList();
+    });
+  });
+}
+
+document.getElementById('rosterImportBtn').addEventListener('click', async ()=>{
+  const raw = document.getElementById('rosterImportInput').value;
+  const msg = document.getElementById('rosterMsg');
+  const names = raw.split(/[\n,]+/).map(s=>s.trim()).filter(Boolean);
+  if(!names.length){
+    msg.textContent = 'Wklej przynajmniej jedno imię i nazwisko.';
+    msg.className = 'msg err';
+    return;
+  }
+  let added = 0, skipped = 0;
+  names.forEach(name=>{
+    const key = slug(name);
+    if(!key) return;
+    if(roster.some(p=> slug(p.name) === key)){ skipped++; }
+    else{ roster.push({name}); added++; }
+  });
+  try{
+    await saveRoster();
+    msg.textContent = '✓ Dodano '+added+' zawodników' + (skipped ? ' (pominięto '+skipped+' już istniejących).' : '.');
+    msg.className = 'msg ok';
+    document.getElementById('rosterImportInput').value = '';
+    renderPicker();
+    renderTable();
+    renderRosterList();
+  }catch(e){
+    console.error(e);
+    msg.textContent = 'Błąd zapisu — spróbuj ponownie.';
+    msg.className = 'msg err';
+  }
+});
+async function initPinScreen(){
+  const storedPin = await loadPin();
+  const title = document.getElementById('pinTitle');
+  const sub = document.getElementById('pinSub');
+  if(!storedPin){
+    title.textContent = 'Ustaw PIN trenera';
+    sub.textContent = 'To pierwsze wejście — wybierz PIN, który zabezpieczy panel przed zmianami przez zawodników.';
+  }else{
+    title.textContent = 'Panel trenera';
+    sub.textContent = 'Podaj PIN, żeby zarządzać aktywnościami.';
+  }
+}
+
+// ---------- tabs ----------
+document.querySelectorAll('nav.bottom button').forEach(btn=>{
+  btn.addEventListener('click', async ()=>{
+    document.querySelectorAll('nav.bottom button').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(btn.dataset.view).classList.add('active');
+    if(btn.dataset.view==='view-table'){
+      await Promise.all([loadRoster(), loadAllChecks()]);   // świeże dane całej drużyny
+      renderTable();
+    }
+    if(btn.dataset.view==='view-coach' && !coachUnlocked) initPinScreen();
+  });
+});
+
+// ---------- init ----------
+async function init(){
+  await Promise.all([loadRoster(), loadActivities(), loadAllChecks()]);
+  renderPicker();
+  renderTable();
+}
+init();
+</script>
+</body>
+</html>

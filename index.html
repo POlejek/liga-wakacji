@@ -123,11 +123,23 @@
   button.btn.danger{ background:transparent; border:1px solid var(--coral); color:var(--coral);}
   .coach-activity-row{ display:flex; align-items:center; gap:10px; background:var(--navy-panel); border:1px solid var(--line); border-radius:11px; padding:11px 13px; margin-bottom:8px;}
   .coach-activity-row .emoji{ font-size:20px; width:28px; text-align:center;}
-  .coach-activity-row .info{ flex:1;}
+  .coach-activity-row .info{ flex:1; min-width:0;}
   .coach-activity-row .info .name{ font-weight:700; font-size:14px;}
   .coach-activity-row .info .pts{ font-family:var(--font-mono); font-size:11.5px; color:var(--amber);}
   .coach-activity-row.inactive{ opacity:.4;}
   .icon-btn{ background:none; border:none; color:rgba(244,241,232,0.6); font-size:16px; padding:6px; cursor:pointer;}
+  .reorder-btns{ display:flex; flex-direction:column; gap:1px; flex-shrink:0;}
+  .reorder-btns .icon-btn{ font-size:11px; padding:1px 5px;}
+  .reorder-btns .icon-btn:disabled{ opacity:.25; cursor:default;}
+
+  /* ---------- Task sections (wykluczające się aktywności) ---------- */
+  .section-group{ border:1px dashed var(--line); border-radius:14px; padding:12px 10px 2px; margin-bottom:12px;}
+  .section-group .activity-card{ margin-bottom:8px;}
+  .section-group-title{
+    font-size:11.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--amber); margin:0 0 8px 2px;
+    display:flex; align-items:baseline; gap:8px; font-weight:700;
+  }
+  .section-group-hint{ font-size:10.5px; color:rgba(244,241,232,0.5); text-transform:none; letter-spacing:0; font-weight:500;}
   .form-panel{ background:var(--navy-panel); border:1px solid var(--line); border-radius:14px; padding:16px; margin-bottom:20px;}
   .emoji-select{ display:flex; gap:7px; flex-wrap:wrap; margin-bottom:12px;}
   .emoji-opt{ width:40px; height:40px; border-radius:9px; border:1px solid var(--line); background:var(--navy); font-size:19px; cursor:pointer; display:flex; align-items:center; justify-content:center;}
@@ -229,6 +241,11 @@
           <div class="field">
             <label for="actPointsInput">Punkty</label>
             <input type="number" id="actPointsInput" min="1" max="100" placeholder="10">
+          </div>
+          <div class="field">
+            <label for="actGroupInput">Sekcja (opcjonalnie)</label>
+            <input type="text" id="actGroupInput" placeholder="np. Bieg — dystans">
+            <p class="section-sub" style="margin:6px 0 0;">Aktywności z tą samą nazwą sekcji wykluczają się nawzajem — zawodnik zaliczy dziennie tylko jedną z nich (np. Bieg 3 km / 5 km / 10 km).</p>
           </div>
           <div class="field">
             <label for="actDeadlineInput">Aktywna do (opcjonalnie)</label>
@@ -348,12 +365,13 @@ const STREAK_MILESTONES = [
   {days:20, pts:200}, {days:25, pts:300}, {days:30, pts:500}
 ];
 const DEFAULT_ACTIVITIES = [
-  {id:'a1', name:'Bieg 5 km', points:10, emoji:'🏃', active:true},
-  {id:'a2', name:'Rower 15 km', points:10, emoji:'🚴', active:true},
-  {id:'a3', name:'Pływanie 1 km', points:15, emoji:'🏊', active:true},
-  {id:'a4', name:'Mobilność bioder', points:5, emoji:'🦵', active:true},
-  {id:'a5', name:'Piłka / żonglerka', points:5, emoji:'⚽', active:true},
+  {id:'a1', name:'Bieg 5 km', points:10, emoji:'🏃', active:true, order:0, group:null},
+  {id:'a2', name:'Rower 15 km', points:10, emoji:'🚴', active:true, order:1, group:null},
+  {id:'a3', name:'Pływanie 1 km', points:15, emoji:'🏊', active:true, order:2, group:null},
+  {id:'a4', name:'Mobilność bioder', points:5, emoji:'🦵', active:true, order:3, group:null},
+  {id:'a5', name:'Piłka / żonglerka', points:5, emoji:'⚽', active:true, order:4, group:null},
 ];
+function sortedByOrder(list){ return list.slice().sort((a,b)=> (a.order||0)-(b.order||0)); }
 
 function pad(n){ return n<10 ? '0'+n : ''+n; }
 function toDateStr(d){ return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); }
@@ -388,6 +406,9 @@ async function loadActivities(){
     activities = DEFAULT_ACTIVITIES.slice();
     try{ await window.storage.set('activities', JSON.stringify(activities), true); }catch(e){}
   }
+  let needsMigration = false;
+  activities.forEach((a,i)=>{ if(typeof a.order !== 'number'){ a.order = i; needsMigration = true; } });
+  if(needsMigration){ try{ await saveActivities(); }catch(e){} }
 }
 async function saveActivities(){ try{ await window.storage.set('activities', JSON.stringify(activities), true); }catch(e){ console.error(e); } }
 
@@ -493,6 +514,7 @@ document.getElementById('switchPlayerBtn').addEventListener('click', deselectPla
 
 // ---------- rendering: activities screen ----------
 function renderActivitiesScreen(){
+  if(!currentPlayer) return;
   const key = slug(currentPlayer);
   const checks = checksByPlayer[key] || [];
   const streak = calcStreak(checks);
@@ -501,7 +523,7 @@ function renderActivitiesScreen(){
   document.getElementById('statTotal').textContent = calcTotal(checks);
   document.getElementById('nextMilestone').textContent = nextMilestoneText(streak);
 
-  const active = activities.filter(isActivityAvailable);
+  const active = sortedByOrder(activities.filter(isActivityAvailable));
   const today = todayStr();
   const doneToday = new Set(checks.filter(c=>c.date===today).map(c=>c.activityId));
 
@@ -510,20 +532,34 @@ function renderActivitiesScreen(){
     wrap.innerHTML = '<div class="empty-state">Trener nie dodał jeszcze żadnych aktywności. Zajrzyj później! ⚽</div>';
     return;
   }
+  const renderedGroups = new Set();
   wrap.innerHTML = active.map(a=>{
-    const isDone = doneToday.has(a.id);
-    const deadlineBadge = a.deadline ? ' · <span style="color:var(--coral)">do '+formatDatePL(a.deadline)+'</span>' : '';
-    return '<div class="activity-card '+(isDone?'done':'')+'" data-id="'+a.id+'">' +
-      '<div class="activity-emoji">'+a.emoji+'</div>' +
-      '<div class="activity-info"><div class="activity-name">'+escapeHtml(a.name)+'</div>' +
-      '<div class="activity-points">+'+a.points+' pkt'+deadlineBadge+'</div></div>' +
-      '<div class="activity-check">✓</div>' +
-    '</div>';
+    if(a.group){
+      if(renderedGroups.has(a.group)) return '';
+      renderedGroups.add(a.group);
+      const groupItems = active.filter(x=>x.group===a.group);
+      return '<div class="section-group">' +
+        '<p class="section-group-title">'+escapeHtml(a.group)+' <span class="section-group-hint">wybierz jedną dziennie</span></p>' +
+        groupItems.map(item=>activityCardHtml(item, doneToday)).join('') +
+      '</div>';
+    }
+    return activityCardHtml(a, doneToday);
   }).join('');
 
   wrap.querySelectorAll('.activity-card').forEach(card=>{
     card.addEventListener('click', ()=> toggleActivity(card.dataset.id));
   });
+}
+
+function activityCardHtml(a, doneToday){
+  const isDone = doneToday.has(a.id);
+  const deadlineBadge = a.deadline ? ' · <span style="color:var(--coral)">do '+formatDatePL(a.deadline)+'</span>' : '';
+  return '<div class="activity-card '+(isDone?'done':'')+'" data-id="'+a.id+'">' +
+    '<div class="activity-emoji">'+a.emoji+'</div>' +
+    '<div class="activity-info"><div class="activity-name">'+escapeHtml(a.name)+'</div>' +
+    '<div class="activity-points">+'+a.points+' pkt'+deadlineBadge+'</div></div>' +
+    '<div class="activity-check">✓</div>' +
+  '</div>';
 }
 
 async function toggleActivity(activityId){
@@ -538,8 +574,14 @@ async function toggleActivity(activityId){
     checks.splice(existingIdx,1);
     enqueueToast('Odznaczono: '+activity.name);
   }else{
+    let switchedFrom = null;
+    if(activity.group){
+      const otherIdx = checks.findIndex(c=> c.date===today && c.activityId!==activityId &&
+        activities.some(x=> x.id===c.activityId && x.group===activity.group));
+      if(otherIdx >= 0){ switchedFrom = checks[otherIdx].activityName; checks.splice(otherIdx,1); }
+    }
     checks.push({activityId, activityName:activity.name, points:activity.points, date:today, ts:Date.now()});
-    enqueueToast('✓ +'+activity.points+' pkt — '+activity.name);
+    enqueueToast((switchedFrom ? '🔄 Zamieniono „'+switchedFrom+'” na ' : '✓ ')+'+'+activity.points+' pkt — '+activity.name);
     awardStreakBonuses(checks, today).forEach(msg => enqueueToast(msg));
   }
   checksByPlayer[key] = checks;
@@ -614,15 +656,21 @@ function getSelectedEmoji(){
 function renderCoachActivityList(){
   const wrap = document.getElementById('coachActivityList');
   if(!activities.length){ wrap.innerHTML = '<p class="section-sub">Brak aktywności — dodaj pierwszą powyżej.</p>'; return; }
-  wrap.innerHTML = activities.map(a=>{
+  const sorted = sortedByOrder(activities);
+  wrap.innerHTML = sorted.map((a,i)=>{
     const isExpired = a.deadline && todayStr() > a.deadline;
     const dimmed = !a.active || isExpired;
     let statusText = a.active ? 'aktywna' : 'wyłączona';
     let deadlineText = '';
     if(a.deadline){ deadlineText = ' · termin: '+formatDatePL(a.deadline) + (isExpired ? ' (minął)' : ''); }
+    const groupText = a.group ? ' · sekcja: '+escapeHtml(a.group) : '';
     return '<div class="coach-activity-row '+(dimmed?'inactive':'')+'">' +
+      '<div class="reorder-btns">' +
+        '<button class="icon-btn" data-action="up" data-id="'+a.id+'" title="Przenieś wyżej"'+(i===0?' disabled':'')+'>▲</button>' +
+        '<button class="icon-btn" data-action="down" data-id="'+a.id+'" title="Przenieś niżej"'+(i===sorted.length-1?' disabled':'')+'>▼</button>' +
+      '</div>' +
       '<div class="emoji">'+a.emoji+'</div>' +
-      '<div class="info"><div class="name">'+escapeHtml(a.name)+'</div><div class="pts">'+a.points+' pkt · '+statusText+deadlineText+'</div></div>' +
+      '<div class="info"><div class="name">'+escapeHtml(a.name)+'</div><div class="pts">'+a.points+' pkt · '+statusText+deadlineText+groupText+'</div></div>' +
       '<button class="icon-btn" data-action="toggle" data-id="'+a.id+'" title="Włącz/wyłącz">'+(a.active?'👁️':'🚫')+'</button>' +
       '<button class="icon-btn" data-action="edit" data-id="'+a.id+'" title="Edytuj">✏️</button>' +
       '<button class="icon-btn" data-action="delete" data-id="'+a.id+'" title="Usuń">🗑️</button>' +
@@ -630,8 +678,18 @@ function renderCoachActivityList(){
   }).join('');
 
   wrap.querySelectorAll('[data-action]').forEach(btn=>{
+    if(btn.disabled) return;
     btn.addEventListener('click', ()=> handleCoachAction(btn.dataset.action, btn.dataset.id));
   });
+}
+
+function moveActivity(id, dir){
+  const sorted = sortedByOrder(activities);
+  const idx = sorted.findIndex(a=>a.id===id);
+  const swapIdx = idx + dir;
+  if(idx<0 || swapIdx<0 || swapIdx>=sorted.length) return;
+  const tmp = sorted[idx]; sorted[idx] = sorted[swapIdx]; sorted[swapIdx] = tmp;
+  sorted.forEach((a,i)=> a.order = i);
 }
 
 async function handleCoachAction(action, id){
@@ -652,11 +710,17 @@ async function handleCoachAction(action, id){
     editingActivityId = id;
     document.getElementById('actNameInput').value = a.name;
     document.getElementById('actPointsInput').value = a.points;
+    document.getElementById('actGroupInput').value = a.group || '';
     document.getElementById('actDeadlineInput').value = a.deadline || '';
     renderEmojiSelect(a.emoji);
     document.getElementById('actSaveBtn').textContent = 'Zapisz zmiany';
     document.getElementById('actCancelEditBtn').style.display = 'block';
     document.getElementById('actNameInput').scrollIntoView({behavior:'smooth', block:'center'});
+  }else if(action==='up' || action==='down'){
+    moveActivity(id, action==='up' ? -1 : 1);
+    await saveActivities();
+    renderCoachActivityList();
+    renderActivitiesScreen();
   }
 }
 
@@ -665,6 +729,7 @@ function resetActivityForm(){
   editingActivityId = null;
   document.getElementById('actNameInput').value = '';
   document.getElementById('actPointsInput').value = '';
+  document.getElementById('actGroupInput').value = '';
   document.getElementById('actDeadlineInput').value = '';
   renderEmojiSelect(EMOJI_OPTS[0]);
   document.getElementById('actSaveBtn').textContent = 'Dodaj aktywność';
@@ -674,6 +739,7 @@ function resetActivityForm(){
 document.getElementById('actSaveBtn').addEventListener('click', async ()=>{
   const name = document.getElementById('actNameInput').value.trim();
   const points = Number(document.getElementById('actPointsInput').value);
+  const group = document.getElementById('actGroupInput').value.trim() || null;
   const deadline = document.getElementById('actDeadlineInput').value || null;
   const emoji = getSelectedEmoji();
   const msg = document.getElementById('actMsg');
@@ -684,10 +750,11 @@ document.getElementById('actSaveBtn').addEventListener('click', async ()=>{
   }
   if(editingActivityId){
     const a = activities.find(x=>x.id===editingActivityId);
-    if(a){ a.name=name; a.points=points; a.emoji=emoji; a.deadline=deadline; }
+    if(a){ a.name=name; a.points=points; a.emoji=emoji; a.group=group; a.deadline=deadline; }
     msg.textContent = '✓ Zapisano zmiany.';
   }else{
-    activities.push({id:uid(), name, points, emoji, deadline, active:true});
+    const maxOrder = activities.reduce((m,a)=> Math.max(m, a.order||0), -1);
+    activities.push({id:uid(), name, points, emoji, group, deadline, active:true, order:maxOrder+1});
     msg.textContent = '✓ Dodano aktywność.';
   }
   msg.className = 'msg ok';

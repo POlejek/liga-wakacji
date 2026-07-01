@@ -79,6 +79,9 @@
     display:flex; align-items:center; justify-content:center; font-size:14px; color:transparent;
   }
   .activity-card.done .activity-check{ background:var(--turf); border-color:var(--turf); color:var(--chalk); }
+  .activity-card.locked{ cursor:default; opacity:.62; }
+  .activity-card.locked:active{ background:var(--navy-panel); }
+  .activity-card.locked.done{ background: rgba(46,110,78,0.08); }
   .empty-state{ text-align:center; padding:40px 20px; color:rgba(244,241,232,0.45); font-size:13.5px; line-height:1.6;}
 
   /* ---------- Toast ---------- */
@@ -112,6 +115,8 @@
     padding:12px 13px; font-family:var(--font-body); font-size:15px; outline:none;
   }
   input:focus, select:focus{ border-color:var(--amber);}
+  .checkbox-label{ display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font-size:14.5px; color:var(--chalk); cursor:pointer;}
+  .checkbox-label input[type="checkbox"]{ width:18px; height:18px; accent-color:var(--turf); flex-shrink:0; cursor:pointer;}
   .row2{ display:grid; grid-template-columns:1fr 1fr; gap:10px;}
   .field{ margin-bottom:12px;}
   button.btn{
@@ -251,7 +256,11 @@
           <div class="field">
             <label for="actDeadlineInput">Aktywna do (opcjonalnie)</label>
             <input type="date" id="actDeadlineInput">
-            <p class="section-sub" style="margin:6px 0 0;">Zostaw puste dla aktywności stałej. Po tej dacie zniknie z listy do odznaczenia u zawodników.</p>
+            <p class="section-sub" style="margin:6px 0 0;">Zostaw puste dla aktywności stałej. Po tej dacie zawodnicy jej nie zaznaczą — ale jeśli ktoś już ją zaliczył, nadal zobaczy ją na liście jako wykonaną.</p>
+          </div>
+          <div class="field">
+            <label class="checkbox-label"><input type="checkbox" id="actOnceInput"> Aktywność jednorazowa</label>
+            <p class="section-sub" style="margin:6px 0 0;">Zawodnik zaliczy ją tylko raz (nie codziennie) — np. zdobycie umiejętności albo przeczytanie książki.</p>
           </div>
           <button class="btn" id="actSaveBtn">Dodaj aktywność</button>
           <button class="btn ghost" id="actCancelEditBtn" style="display:none; margin-top:8px;">Anuluj edycję</button>
@@ -393,11 +402,11 @@ const STREAK_MILESTONES = [
   {days:20, pts:200}, {days:25, pts:300}, {days:30, pts:500}
 ];
 const DEFAULT_ACTIVITIES = [
-  {id:'a1', name:'Bieg 5 km', points:10, emoji:'🏃', active:true, order:0, group:null},
-  {id:'a2', name:'Rower 15 km', points:10, emoji:'🚴', active:true, order:1, group:null},
-  {id:'a3', name:'Pływanie 1 km', points:15, emoji:'🏊', active:true, order:2, group:null},
-  {id:'a4', name:'Mobilność bioder', points:5, emoji:'🦵', active:true, order:3, group:null},
-  {id:'a5', name:'Piłka / żonglerka', points:5, emoji:'⚽', active:true, order:4, group:null},
+  {id:'a1', name:'Bieg 5 km', points:10, emoji:'🏃', active:true, order:0, group:null, once:false},
+  {id:'a2', name:'Rower 15 km', points:10, emoji:'🚴', active:true, order:1, group:null, once:false},
+  {id:'a3', name:'Pływanie 1 km', points:15, emoji:'🏊', active:true, order:2, group:null, once:false},
+  {id:'a4', name:'Mobilność bioder', points:5, emoji:'🦵', active:true, order:3, group:null, once:false},
+  {id:'a5', name:'Piłka / żonglerka', points:5, emoji:'⚽', active:true, order:4, group:null, once:false},
 ];
 function sortedByOrder(list){ return list.slice().sort((a,b)=> (a.order||0)-(b.order||0)); }
 
@@ -409,7 +418,14 @@ function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;',
 function mondayOf(dateStr){ const d=new Date(dateStr); const day=d.getDay(); const diff=(day===0?-6:1-day); d.setDate(d.getDate()+diff); return toDateStr(d); }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 function formatDatePL(dateStr){ if(!dateStr) return ''; const [y,m,d]=dateStr.split('-'); return d+'.'+m+'.'+y; }
-function isActivityAvailable(a){ return a.active && (!a.deadline || todayStr() <= a.deadline); }
+function isExpired(a){ return !!(a.deadline && todayStr() > a.deadline); }
+function hasAnyCheck(activityId, checks){ return checks.some(c=> c.activityId===activityId); }
+function isActivityDone(a, checks, today){
+  if(a.once || isExpired(a)) return hasAnyCheck(a.id, checks);
+  return checks.some(c=> c.date===today && c.activityId===a.id);
+}
+function isActivityLocked(a, checks){ return isExpired(a) || (!!a.once && hasAnyCheck(a.id, checks)); }
+function isActivityVisible(a, checks){ return a.active && (!isExpired(a) || hasAnyCheck(a.id, checks)); }
 
 let roster = [];
 let activities = [];
@@ -553,41 +569,47 @@ function renderActivitiesScreen(){
   document.getElementById('statTotal').textContent = calcTotal(checks);
   document.getElementById('nextMilestone').textContent = nextMilestoneText(streak);
 
-  const active = sortedByOrder(activities.filter(isActivityAvailable));
+  const visible = sortedByOrder(activities.filter(a=> isActivityVisible(a, checks)));
   const today = todayStr();
-  const doneToday = new Set(checks.filter(c=>c.date===today).map(c=>c.activityId));
 
   const wrap = document.getElementById('activityList');
-  if(!active.length){
+  if(!visible.length){
     wrap.innerHTML = '<div class="empty-state">Trener nie dodał jeszcze żadnych aktywności. Zajrzyj później! ⚽</div>';
     return;
   }
   const renderedGroups = new Set();
-  wrap.innerHTML = active.map(a=>{
+  wrap.innerHTML = visible.map(a=>{
     if(a.group){
       if(renderedGroups.has(a.group)) return '';
       renderedGroups.add(a.group);
-      const groupItems = active.filter(x=>x.group===a.group);
+      const groupItems = visible.filter(x=>x.group===a.group);
       return '<div class="section-group">' +
         '<p class="section-group-title">'+escapeHtml(a.group)+' <span class="section-group-hint">wybierz jedną dziennie</span></p>' +
-        groupItems.map(item=>activityCardHtml(item, doneToday)).join('') +
+        groupItems.map(item=>activityCardHtml(item, checks, today)).join('') +
       '</div>';
     }
-    return activityCardHtml(a, doneToday);
+    return activityCardHtml(a, checks, today);
   }).join('');
 
-  wrap.querySelectorAll('.activity-card').forEach(card=>{
+  wrap.querySelectorAll('.activity-card:not(.locked)').forEach(card=>{
     card.addEventListener('click', ()=> toggleActivity(card.dataset.id));
   });
 }
 
-function activityCardHtml(a, doneToday){
-  const isDone = doneToday.has(a.id);
-  const deadlineBadge = a.deadline ? ' · <span style="color:var(--coral)">do '+formatDatePL(a.deadline)+'</span>' : '';
-  return '<div class="activity-card '+(isDone?'done':'')+'" data-id="'+a.id+'">' +
+function activityCardHtml(a, checks, today){
+  const isDone = isActivityDone(a, checks, today);
+  const locked = isActivityLocked(a, checks);
+  let deadlineBadge = '';
+  if(a.deadline){
+    deadlineBadge = isExpired(a)
+      ? ' · <span style="color:rgba(244,241,232,0.45)">zakończona '+formatDatePL(a.deadline)+'</span>'
+      : ' · <span style="color:var(--coral)">do '+formatDatePL(a.deadline)+'</span>';
+  }
+  const onceBadge = a.once ? ' · <span style="color:var(--amber)">jednorazowa</span>' : '';
+  return '<div class="activity-card '+(isDone?'done ':'')+(locked?'locked':'')+'" data-id="'+a.id+'">' +
     '<div class="activity-emoji">'+a.emoji+'</div>' +
     '<div class="activity-info"><div class="activity-name">'+escapeHtml(a.name)+'</div>' +
-    '<div class="activity-points">+'+a.points+' pkt'+deadlineBadge+'</div></div>' +
+    '<div class="activity-points">+'+a.points+' pkt'+onceBadge+deadlineBadge+'</div></div>' +
     '<div class="activity-check">✓</div>' +
   '</div>';
 }
@@ -598,21 +620,29 @@ async function toggleActivity(activityId){
   const today = todayStr();
   const activity = activities.find(a=>a.id===activityId);
   if(!activity) return;
+  if(isActivityLocked(activity, checks)) return;
 
-  const existingIdx = checks.findIndex(c=> c.date===today && c.activityId===activityId);
-  if(existingIdx >= 0){
-    checks.splice(existingIdx,1);
-    enqueueToast('Odznaczono: '+activity.name);
-  }else{
-    let switchedFrom = null;
-    if(activity.group){
-      const otherIdx = checks.findIndex(c=> c.date===today && c.activityId!==activityId &&
-        activities.some(x=> x.id===c.activityId && x.group===activity.group));
-      if(otherIdx >= 0){ switchedFrom = checks[otherIdx].activityName; checks.splice(otherIdx,1); }
-    }
+  if(activity.once){
+    if(hasAnyCheck(activityId, checks)) return;
     checks.push({activityId, activityName:activity.name, points:activity.points, date:today, ts:Date.now()});
-    enqueueToast((switchedFrom ? '🔄 Zamieniono „'+switchedFrom+'” na ' : '✓ ')+'+'+activity.points+' pkt — '+activity.name);
+    enqueueToast('✓ +'+activity.points+' pkt — '+activity.name);
     awardStreakBonuses(checks, today).forEach(msg => enqueueToast(msg));
+  }else{
+    const existingIdx = checks.findIndex(c=> c.date===today && c.activityId===activityId);
+    if(existingIdx >= 0){
+      checks.splice(existingIdx,1);
+      enqueueToast('Odznaczono: '+activity.name);
+    }else{
+      let switchedFrom = null;
+      if(activity.group){
+        const otherIdx = checks.findIndex(c=> c.date===today && c.activityId!==activityId &&
+          activities.some(x=> x.id===c.activityId && x.group===activity.group));
+        if(otherIdx >= 0){ switchedFrom = checks[otherIdx].activityName; checks.splice(otherIdx,1); }
+      }
+      checks.push({activityId, activityName:activity.name, points:activity.points, date:today, ts:Date.now()});
+      enqueueToast((switchedFrom ? '🔄 Zamieniono „'+switchedFrom+'” na ' : '✓ ')+'+'+activity.points+' pkt — '+activity.name);
+      awardStreakBonuses(checks, today).forEach(msg => enqueueToast(msg));
+    }
   }
   checksByPlayer[key] = checks;
   renderActivitiesScreen();
@@ -688,19 +718,20 @@ function renderCoachActivityList(){
   if(!activities.length){ wrap.innerHTML = '<p class="section-sub">Brak aktywności — dodaj pierwszą powyżej.</p>'; return; }
   const sorted = sortedByOrder(activities);
   wrap.innerHTML = sorted.map((a,i)=>{
-    const isExpired = a.deadline && todayStr() > a.deadline;
-    const dimmed = !a.active || isExpired;
+    const expired = isExpired(a);
+    const dimmed = !a.active || expired;
     let statusText = a.active ? 'aktywna' : 'wyłączona';
     let deadlineText = '';
-    if(a.deadline){ deadlineText = ' · termin: '+formatDatePL(a.deadline) + (isExpired ? ' (minął)' : ''); }
+    if(a.deadline){ deadlineText = ' · termin: '+formatDatePL(a.deadline) + (expired ? ' (minął)' : ''); }
     const groupText = a.group ? ' · sekcja: '+escapeHtml(a.group) : '';
+    const onceText = a.once ? ' · jednorazowa' : '';
     return '<div class="coach-activity-row '+(dimmed?'inactive':'')+'">' +
       '<div class="reorder-btns">' +
         '<button class="icon-btn" data-action="up" data-id="'+a.id+'" title="Przenieś wyżej"'+(i===0?' disabled':'')+'>▲</button>' +
         '<button class="icon-btn" data-action="down" data-id="'+a.id+'" title="Przenieś niżej"'+(i===sorted.length-1?' disabled':'')+'>▼</button>' +
       '</div>' +
       '<div class="emoji">'+a.emoji+'</div>' +
-      '<div class="info"><div class="name">'+escapeHtml(a.name)+'</div><div class="pts">'+a.points+' pkt · '+statusText+deadlineText+groupText+'</div></div>' +
+      '<div class="info"><div class="name">'+escapeHtml(a.name)+'</div><div class="pts">'+a.points+' pkt · '+statusText+onceText+deadlineText+groupText+'</div></div>' +
       '<button class="icon-btn" data-action="toggle" data-id="'+a.id+'" title="Włącz/wyłącz">'+(a.active?'👁️':'🚫')+'</button>' +
       '<button class="icon-btn" data-action="edit" data-id="'+a.id+'" title="Edytuj">✏️</button>' +
       '<button class="icon-btn" data-action="delete" data-id="'+a.id+'" title="Usuń">🗑️</button>' +
@@ -744,6 +775,7 @@ async function handleCoachAction(action, id){
     document.getElementById('actPointsInput').value = a.points;
     document.getElementById('actGroupInput').value = a.group || '';
     document.getElementById('actDeadlineInput').value = a.deadline || '';
+    document.getElementById('actOnceInput').checked = !!a.once;
     renderEmojiSelect(a.emoji);
     document.getElementById('actSaveBtn').textContent = 'Zapisz zmiany';
     document.getElementById('actCancelEditBtn').style.display = 'block';
@@ -879,6 +911,7 @@ function resetActivityForm(){
   document.getElementById('actPointsInput').value = '';
   document.getElementById('actGroupInput').value = '';
   document.getElementById('actDeadlineInput').value = '';
+  document.getElementById('actOnceInput').checked = false;
   renderEmojiSelect(EMOJI_OPTS[0]);
   document.getElementById('actSaveBtn').textContent = 'Dodaj aktywność';
   document.getElementById('actCancelEditBtn').style.display = 'none';
@@ -889,6 +922,7 @@ document.getElementById('actSaveBtn').addEventListener('click', async ()=>{
   const points = Number(document.getElementById('actPointsInput').value);
   const group = document.getElementById('actGroupInput').value.trim() || null;
   const deadline = document.getElementById('actDeadlineInput').value || null;
+  const once = document.getElementById('actOnceInput').checked;
   const emoji = getSelectedEmoji();
   const msg = document.getElementById('actMsg');
   if(!name || !points || points<1){
@@ -898,11 +932,11 @@ document.getElementById('actSaveBtn').addEventListener('click', async ()=>{
   }
   if(editingActivityId){
     const a = activities.find(x=>x.id===editingActivityId);
-    if(a){ a.name=name; a.points=points; a.emoji=emoji; a.group=group; a.deadline=deadline; }
+    if(a){ a.name=name; a.points=points; a.emoji=emoji; a.group=group; a.deadline=deadline; a.once=once; }
     msg.textContent = '✓ Zapisano zmiany.';
   }else{
     const maxOrder = activities.reduce((m,a)=> Math.max(m, a.order||0), -1);
-    activities.push({id:uid(), name, points, emoji, group, deadline, active:true, order:maxOrder+1});
+    activities.push({id:uid(), name, points, emoji, group, deadline, once, active:true, order:maxOrder+1});
     msg.textContent = '✓ Dodano aktywność.';
   }
   msg.className = 'msg ok';

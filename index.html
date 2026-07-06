@@ -617,6 +617,7 @@ function renderPicker(){
 
 let pendingPlayerName = null;
 function pickPlayer(name){
+  if(TEAM === LEGACY_TEAM_CODE){ selectPlayer(name); return; }  // drużyna główna: bez PIN-u zawodnika, jako jedyny wyjątek
   const entry = roster.find(p=> slug(p.name)===slug(name));
   pendingPlayerName = name;
   document.getElementById('pickerScreen').style.display = 'none';
@@ -1162,11 +1163,12 @@ async function unlockCoach(){
 function renderRosterList(){
   const wrap = document.getElementById('rosterListWrap');
   if(!roster.length){ wrap.innerHTML = '<p class="section-sub">Lista jest pusta — zaimportuj zawodników powyżej.</p>'; return; }
+  const isLegacyTeam = TEAM === LEGACY_TEAM_CODE;
   wrap.innerHTML = '<p class="section-sub" style="margin-bottom:8px;">Na liście: '+roster.length+' zawodników</p>' +
     roster.map(p=>
       '<div class="coach-activity-row"><div class="info"><div class="name">'+escapeHtml(p.name)+'</div>' +
-      '<div class="pts">'+(p.pin ? 'PIN ustawiony' : 'PIN nieustawiony — poprosi o niego przy pierwszym wejściu')+'</div></div>' +
-      '<button class="icon-btn" data-resetpin="'+escapeHtml(p.name)+'" title="Zresetuj PIN">🔑</button>' +
+      '<div class="pts">'+(isLegacyTeam ? 'PIN nie wymagany (drużyna główna)' : (p.pin ? 'PIN ustawiony' : 'PIN nieustawiony — poprosi o niego przy pierwszym wejściu'))+'</div></div>' +
+      (isLegacyTeam ? '' : '<button class="icon-btn" data-resetpin="'+escapeHtml(p.name)+'" title="Zresetuj PIN">🔑</button>') +
       '<button class="icon-btn" data-remove="'+escapeHtml(p.name)+'" title="Usuń z listy">🗑️</button></div>'
     ).join('');
   wrap.querySelectorAll('[data-remove]').forEach(btn=>{

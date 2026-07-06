@@ -172,6 +172,7 @@
   }
   nav.bottom button .icon{ font-size:20px; }
   nav.bottom button.active{ color:var(--amber); }
+  nav.bottom button:disabled{ opacity:.3; cursor:default; }
 
   .loading{ text-align:center; padding:40px; color:rgba(244,241,232,0.4); font-family:var(--font-mono); font-size:13px;}
 
@@ -697,7 +698,7 @@ document.getElementById('newTeamLink').addEventListener('click', async (e)=>{
   e.preventDefault();
   if(!confirm('Założyć nową drużynę? Zostaniesz przeniesiony do pustego panelu nowej drużyny — z osobnym składem, aktywnościami i PIN-em trenera.')) return;
   const code = await generateUniqueTeamCode();
-  location.href = location.pathname + '?team=' + encodeURIComponent(code);
+  location.href = location.pathname + '?team=' + encodeURIComponent(code) + '&new=1';
 });
 
 // ---------- rendering: activities screen ----------
@@ -1145,6 +1146,7 @@ document.getElementById('pinSubmitBtn').addEventListener('click', async ()=>{
 });
 async function unlockCoach(){
   coachUnlocked = true;
+  releaseForcedCoachSetup();
   document.getElementById('coachLocked').style.display='none';
   document.getElementById('coachPanel').style.display='block';
   renderEmojiSelect(EMOJI_OPTS[0]);
@@ -1228,11 +1230,33 @@ async function initPinScreen(){
   const sub = document.getElementById('pinSub');
   if(!storedPin){
     title.textContent = 'Ustaw PIN trenera';
-    sub.textContent = 'To pierwsze wejście — wybierz PIN, który zabezpieczy panel przed zmianami przez zawodników.';
+    sub.textContent = forcedCoachSetup
+      ? 'Drużyna została właśnie założona — zanim udostępnisz link komukolwiek, ustaw swój PIN trenera, żeby zabezpieczyć panel tylko dla siebie.'
+      : 'To pierwsze wejście — wybierz PIN, który zabezpieczy panel przed zmianami przez zawodników.';
   }else{
     title.textContent = 'Panel trenera';
     sub.textContent = 'Podaj PIN, żeby zarządzać aktywnościami.';
   }
+}
+
+// ---------- wymuszenie ustawienia PIN-u trenera zaraz po założeniu nowej drużyny ----------
+const NEW_TEAM_SETUP = new URLSearchParams(location.search).has('new');
+let forcedCoachSetup = false;
+
+function enterForcedCoachSetup(){
+  forcedCoachSetup = true;
+  document.querySelectorAll('nav.bottom button').forEach(b=>{
+    if(b.dataset.view !== 'view-coach') b.disabled = true;
+  });
+  activateView('view-coach');
+}
+function releaseForcedCoachSetup(){
+  if(!forcedCoachSetup) return;
+  forcedCoachSetup = false;
+  document.querySelectorAll('nav.bottom button').forEach(b=> b.disabled = false);
+  const url = new URL(location.href);
+  url.searchParams.delete('new');
+  history.replaceState(null, '', url.toString());
 }
 
 // ---------- panel administratora (widok wszystkich drużyn, dostępny tylko z ?admin=1) ----------
@@ -1388,6 +1412,10 @@ async function init(){
   await Promise.all([loadRoster(), loadActivities(), loadAllChecks()]);
   renderPicker();
   renderTable();
+  if(NEW_TEAM_SETUP){
+    const storedPin = await loadPin();
+    if(!storedPin) enterForcedCoachSetup();
+  }
 }
 init();
 </script>

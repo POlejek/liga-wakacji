@@ -178,6 +178,15 @@
 
   /* ---------- Config warning banner ---------- */
   #cfgWarn{ background:var(--coral); color:#fff; padding:10px 14px; text-align:center; font-size:12.5px; font-weight:600; line-height:1.4;}
+
+  /* ---------- Welcome / invite landing ---------- */
+  .welcome-hero{ padding: 8px 2px 20px; }
+  .welcome-title{ font-family:var(--font-display); font-weight:400; font-size:28px; margin:6px 0 10px; letter-spacing:.01em; }
+  .welcome-lead{ font-size:14px; color:rgba(244,241,232,0.75); line-height:1.55; margin:0 0 22px; }
+  .welcome-steps{ display:flex; flex-direction:column; gap:12px; margin-bottom:24px; }
+  .welcome-step{ display:flex; gap:12px; align-items:flex-start; background:var(--navy-panel); border:1px solid var(--line); border-radius:12px; padding:13px 14px; font-size:13.5px; line-height:1.45; color:rgba(244,241,232,0.85); }
+  .welcome-step b{ color:var(--chalk); }
+  .welcome-step-num{ flex-shrink:0; width:26px; height:26px; border-radius:50%; background:var(--amber); color:var(--navy); font-family:var(--font-mono); font-weight:700; font-size:14px; display:flex; align-items:center; justify-content:center; }
 </style>
 </head>
 <body>
@@ -297,6 +306,25 @@
         <h2 class="section-title" style="margin-top:24px;">Lista aktywności</h2>
         <div id="coachActivityList"></div>
 
+        <div class="form-panel" style="margin-top:24px;">
+          <h2 class="section-title" style="margin-bottom:8px;">Seria i bonusy</h2>
+          <p class="section-sub">Ustal progi serii dni z rzędu (liczy się dowolna zaliczona aktywność) i punkty bonusowe za ich osiągnięcie — np. 5, 10, 15, 20 dni z rzędu.</p>
+          <div class="row2">
+            <div class="field">
+              <label for="streakDaysInput">Dni z rzędu</label>
+              <input type="number" id="streakDaysInput" min="1" max="365" placeholder="5">
+            </div>
+            <div class="field">
+              <label for="streakPointsInput">Punkty bonusowe</label>
+              <input type="number" id="streakPointsInput" min="1" max="999" placeholder="20">
+            </div>
+          </div>
+          <button class="btn" id="streakSaveBtn">Dodaj próg</button>
+          <button class="btn ghost" id="streakCancelEditBtn" style="display:none; margin-top:8px;">Anuluj edycję</button>
+          <p class="msg" id="streakMsg"></p>
+          <div id="streakListWrap" style="margin-top:16px;"></div>
+        </div>
+
         <h2 class="section-title" style="margin-top:24px;">Tabela zawodników</h2>
         <p class="section-sub">Suma punktów oraz pełna lista wykonanych zadań z datą wykonania dla każdego zawodnika.</p>
         <div id="coachTableWrap"><div class="loading">Ładowanie…</div></div>
@@ -353,9 +381,34 @@
         </div>
       </div>
       <div id="adminPanel" style="display:none;">
+        <div class="form-panel">
+          <h2 class="section-title" style="margin-bottom:6px;">Link zapraszający drużyny</h2>
+          <p class="section-sub" style="margin-bottom:10px;">Wyślij ten link każdemu, kto chce założyć własną drużynę. Otworzy stronę z instrukcją i przyciskiem do stworzenia nowej, osobnej drużyny.</p>
+          <button class="btn ghost" id="copyInviteLinkBtn" style="width:auto; padding:8px 16px;">Kopiuj link zapraszający</button>
+          <p class="msg" id="inviteLinkMsg"></p>
+        </div>
         <h2 class="section-title">Wszystkie drużyny</h2>
         <p class="section-sub">Pełna lista drużyn utworzonych w tej instancji apki.</p>
         <div id="adminTeamsWrap"><div class="loading">Ładowanie…</div></div>
+      </div>
+    </section>
+
+    <!-- VIEW: POWITANIE / ZAPROSZENIE (tylko z ?zaloz w linku) -->
+    <section class="view" id="view-welcome">
+      <div class="welcome-hero">
+        <h2 class="welcome-title">Załóż swoją drużynę</h2>
+        <p class="welcome-lead">Liga Wakacji to wspólny dziennik aktywności dla drużyny. Trener układa listę zadań i przyznaje punkty, zawodnicy codziennie odhaczają, co zrobili, a tabela sama pokazuje, kto prowadzi.</p>
+
+        <div class="welcome-steps">
+          <div class="welcome-step"><span class="welcome-step-num">1</span><div>Kliknij <b>„Stwórz swoją drużynę”</b> — dostaniesz własną, pustą drużynę z unikalnym kodem.</div></div>
+          <div class="welcome-step"><span class="welcome-step-num">2</span><div>Ustaw swój <b>PIN trenera</b> — zabezpiecza panel przed zmianami przez zawodników.</div></div>
+          <div class="welcome-step"><span class="welcome-step-num">3</span><div>Dodaj <b>aktywności</b> i <b>zawodników</b> w panelu trenera.</div></div>
+          <div class="welcome-step"><span class="welcome-step-num">4</span><div>Skopiuj <b>link do swojej drużyny</b> (widoczny w panelu trenera) i wyślij go zawodnikom.</div></div>
+        </div>
+
+        <button class="btn" id="createTeamBtn">Stwórz swoją drużynę</button>
+        <p class="msg" id="createTeamMsg"></p>
+        <p class="disclaimer" style="text-align:center; margin-top:18px;">Każda drużyna ma osobne dane — nie widzisz innych drużyn ani one Ciebie.</p>
       </div>
     </section>
 
@@ -446,9 +499,9 @@
      ========================================================================= -->
 <script type="module">
 const EMOJI_OPTS = ['🏃','🚴','🏊','🦵','⚽','🧘','🤸','⛹️','🏋️','⭐'];
-const STREAK_MILESTONES = [
-  {days:3, pts:10}, {days:5, pts:20}, {days:10, pts:50}, {days:15, pts:100},
-  {days:20, pts:200}, {days:25, pts:300}, {days:30, pts:500}
+const DEFAULT_STREAK_MILESTONES = [
+  {days:3, points:10}, {days:5, points:20}, {days:10, points:50}, {days:15, points:100},
+  {days:20, points:200}, {days:25, points:300}, {days:30, points:500}
 ];
 const DEFAULT_ACTIVITIES = [
   {id:'a1', name:'Bieg 5 km', points:10, emoji:'🏃', active:true, order:0, group:null, once:false},
@@ -515,6 +568,7 @@ function teamShareUrl(code){
 
 let roster = [];
 let activities = [];
+let streakMilestones = [];
 let checksByPlayer = {};
 let currentPlayer = null;
 let coachUnlocked = false;
@@ -543,6 +597,19 @@ async function loadActivities(){
   if(needsMigration){ try{ await saveActivities(); }catch(e){} }
 }
 async function saveActivities(){ try{ await window.storage.set(k('activities'), JSON.stringify(activities), true); }catch(e){ console.error(e); } }
+
+async function loadStreakMilestones(){
+  try{
+    const r = await window.storage.get(k('streak_milestones'), true);
+    streakMilestones = r ? JSON.parse(r.value) : null;
+  }catch(e){ streakMilestones = null; }
+  if(!streakMilestones){
+    streakMilestones = DEFAULT_STREAK_MILESTONES.map(m=> ({id:uid(), days:m.days, points:m.points}));
+    try{ await window.storage.set(k('streak_milestones'), JSON.stringify(streakMilestones), true); }catch(e){}
+  }
+}
+async function saveStreakMilestones(){ try{ await window.storage.set(k('streak_milestones'), JSON.stringify(streakMilestones), true); }catch(e){ console.error(e); } }
+function sortedMilestones(){ return streakMilestones.slice().sort((a,b)=> a.days-b.days); }
 
 async function loadAllChecks(){
   checksByPlayer = {};
@@ -587,19 +654,19 @@ function awardStreakBonuses(checks, today){
   const streak = calcStreak(checks);
   const awarded = new Set(checks.filter(c=>c.isBonus).map(c=>c.streakDays));
   const messages = [];
-  STREAK_MILESTONES.forEach(m=>{
+  sortedMilestones().forEach(m=>{
     if(streak >= m.days && !awarded.has(m.days)){
-      checks.push({activityId:'streak-'+m.days, activityName:'Seria '+m.days+' dni', points:m.pts, date:today, ts:Date.now(), isBonus:true, streakDays:m.days});
+      checks.push({activityId:'streak-'+m.days, activityName:'Seria '+m.days+' dni', points:m.points, date:today, ts:Date.now(), isBonus:true, streakDays:m.days});
       awarded.add(m.days);
-      messages.push('🔥 Seria '+m.days+' dni! +'+m.pts+' pkt bonus');
+      messages.push('🔥 Seria '+m.days+' dni! +'+m.points+' pkt bonus');
     }
   });
   return messages;
 }
 function nextMilestoneText(streak){
-  const next = STREAK_MILESTONES.find(m=> m.days > streak);
-  if(!next) return '🏆 Zdobyto wszystkie bonusy za serię — szacunek!';
-  return 'Następny bonus: seria '+next.days+' dni → +'+next.pts+' pkt (jeszcze '+(next.days-streak)+')';
+  const next = sortedMilestones().find(m=> m.days > streak);
+  if(!next) return streakMilestones.length ? '🏆 Zdobyto wszystkie bonusy za serię — szacunek!' : '';
+  return 'Następny bonus: seria '+next.days+' dni → +'+next.points+' pkt (jeszcze '+(next.days-streak)+')';
 }
 
 // ---------- rendering: player picker ----------
@@ -1128,6 +1195,80 @@ document.getElementById('actSaveBtn').addEventListener('click', async ()=>{
   resetActivityForm();
 });
 
+// ---------- coach: seria i bonusy ----------
+let editingStreakId = null;
+
+function renderStreakList(){
+  const wrap = document.getElementById('streakListWrap');
+  if(!streakMilestones.length){ wrap.innerHTML = '<p class="section-sub">Brak progów — dodaj pierwszy powyżej.</p>'; return; }
+  wrap.innerHTML = sortedMilestones().map(m=>
+    '<div class="coach-activity-row">' +
+      '<div class="info"><div class="name">'+m.days+' dni z rzędu</div><div class="pts">+'+m.points+' pkt bonus</div></div>' +
+      '<button class="icon-btn" data-action="edit" data-id="'+m.id+'" title="Edytuj">✏️</button>' +
+      '<button class="icon-btn" data-action="delete" data-id="'+m.id+'" title="Usuń">🗑️</button>' +
+    '</div>'
+  ).join('');
+  wrap.querySelectorAll('[data-action]').forEach(btn=>{
+    btn.addEventListener('click', ()=> handleStreakAction(btn.dataset.action, btn.dataset.id));
+  });
+}
+function resetStreakForm(){
+  editingStreakId = null;
+  document.getElementById('streakDaysInput').value = '';
+  document.getElementById('streakPointsInput').value = '';
+  document.getElementById('streakSaveBtn').textContent = 'Dodaj próg';
+  document.getElementById('streakCancelEditBtn').style.display = 'none';
+}
+document.getElementById('streakCancelEditBtn').addEventListener('click', resetStreakForm);
+
+async function handleStreakAction(action, id){
+  const m = streakMilestones.find(x=>x.id===id);
+  if(!m) return;
+  if(action==='edit'){
+    editingStreakId = id;
+    document.getElementById('streakDaysInput').value = m.days;
+    document.getElementById('streakPointsInput').value = m.points;
+    document.getElementById('streakSaveBtn').textContent = 'Zapisz zmiany';
+    document.getElementById('streakCancelEditBtn').style.display = 'block';
+    document.getElementById('streakDaysInput').scrollIntoView({behavior:'smooth', block:'center'});
+  }else if(action==='delete'){
+    if(!confirm('Usunąć próg „'+m.days+' dni”? Już przyznane zawodnikom bonusy zostaną.')) return;
+    streakMilestones = streakMilestones.filter(x=>x.id!==id);
+    await saveStreakMilestones();
+    renderStreakList();
+    if(editingStreakId===id) resetStreakForm();
+  }
+}
+
+document.getElementById('streakSaveBtn').addEventListener('click', async ()=>{
+  const days = Number(document.getElementById('streakDaysInput').value);
+  const points = Number(document.getElementById('streakPointsInput').value);
+  const msg = document.getElementById('streakMsg');
+  if(!days || days<1 || !points || points<1){
+    msg.textContent = 'Podaj liczbę dni i punktów większą od 0.';
+    msg.className = 'msg err';
+    return;
+  }
+  const duplicate = streakMilestones.some(x=> x.days===days && x.id!==editingStreakId);
+  if(duplicate){
+    msg.textContent = 'Próg dla '+days+' dni już istnieje — edytuj go zamiast dodawać duplikat.';
+    msg.className = 'msg err';
+    return;
+  }
+  if(editingStreakId){
+    const m = streakMilestones.find(x=>x.id===editingStreakId);
+    if(m){ m.days=days; m.points=points; }
+    msg.textContent = '✓ Zapisano zmiany.';
+  }else{
+    streakMilestones.push({id:uid(), days, points});
+    msg.textContent = '✓ Dodano próg.';
+  }
+  msg.className = 'msg ok';
+  try{ await saveStreakMilestones(); }catch(e){ msg.textContent='Błąd zapisu.'; msg.className='msg err'; return; }
+  renderStreakList();
+  resetStreakForm();
+});
+
 // ---------- coach PIN gate ----------
 document.getElementById('pinSubmitBtn').addEventListener('click', async ()=>{
   const val = document.getElementById('pinInput').value.trim();
@@ -1151,6 +1292,7 @@ async function unlockCoach(){
   document.getElementById('coachPanel').style.display='block';
   renderEmojiSelect(EMOJI_OPTS[0]);
   renderCoachActivityList();
+  renderStreakList();
   await Promise.all([loadRoster(), loadAllChecks()]);   // świeże dane, w tym wpisy innych zawodników
   renderRosterList();
   renderCoachTable();
@@ -1259,6 +1401,26 @@ function releaseForcedCoachSetup(){
   url.searchParams.delete('new');
   history.replaceState(null, '', url.toString());
 }
+
+// ---------- strona powitalna / zaproszenie (ogólnodostępny link ?zaloz) ----------
+const WELCOME_MODE = new URLSearchParams(location.search).has('zaloz');
+function inviteUrl(){ return location.origin + location.pathname + '?zaloz'; }
+document.getElementById('createTeamBtn').addEventListener('click', async (e)=>{
+  const btn = e.currentTarget;
+  const msg = document.getElementById('createTeamMsg');
+  btn.disabled = true;
+  msg.textContent = 'Tworzę drużynę…';
+  msg.className = 'msg';
+  try{
+    const code = await generateUniqueTeamCode();
+    location.href = location.pathname + '?team=' + encodeURIComponent(code) + '&new=1';
+  }catch(err){
+    console.error(err);
+    btn.disabled = false;
+    msg.textContent = 'Nie udało się utworzyć drużyny — spróbuj ponownie.';
+    msg.className = 'msg err';
+  }
+});
 
 // ---------- panel administratora (widok wszystkich drużyn, dostępny tylko z ?admin=1) ----------
 const ADMIN_MODE = new URLSearchParams(location.search).has('admin');
@@ -1380,6 +1542,18 @@ function unlockAdmin(){
   document.getElementById('adminPanel').style.display='block';
   renderAdminTeams();
 }
+document.getElementById('copyInviteLinkBtn').addEventListener('click', async ()=>{
+  const msg = document.getElementById('inviteLinkMsg');
+  const url = inviteUrl();
+  try{
+    await navigator.clipboard.writeText(url);
+    msg.textContent = '✓ Skopiowano: '+url;
+    msg.className = 'msg ok';
+  }catch(e){
+    msg.textContent = 'Link zapraszający: '+url;
+    msg.className = 'msg';
+  }
+});
 async function initAdminPinScreen(){
   const storedPin = await loadAdminPin();
   const title = document.getElementById('adminPinTitle');
@@ -1430,6 +1604,14 @@ document.getElementById('copyTeamLinkBtn').addEventListener('click', async ()=>{
 });
 
 async function init(){
+  if(WELCOME_MODE){
+    // Ogólnodostępna strona zaproszenia — tylko instrukcja + przycisk „Stwórz drużynę”,
+    // bez reszty apki i bez wchodzenia do żadnej drużyny.
+    document.querySelector('nav.bottom').style.display = 'none';
+    document.getElementById('whoPill').style.display = 'none';
+    await activateView('view-welcome');
+    return;
+  }
   if(ADMIN_MODE){
     // Tryb administratora pokazuje wyłącznie panel admina — bez reszty apki i bez
     // ładowania danych żadnej konkretnej drużyny.
@@ -1438,7 +1620,7 @@ async function init(){
     return;
   }
   renderTeamCodeBox();
-  await Promise.all([loadRoster(), loadActivities(), loadAllChecks()]);
+  await Promise.all([loadRoster(), loadActivities(), loadAllChecks(), loadStreakMilestones()]);
   renderPicker();
   renderTable();
   if(NEW_TEAM_SETUP){

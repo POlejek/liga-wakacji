@@ -367,7 +367,6 @@
     <button data-view="view-activities" class="active"><span class="icon">📋</span>Aktywności</button>
     <button data-view="view-table"><span class="icon">🏆</span>Tabela</button>
     <button data-view="view-coach"><span class="icon">🔐</span>Trener</button>
-    <button data-view="view-admin" id="navAdminBtn" style="display:none;"><span class="icon">🛠️</span>Admin</button>
   </nav>
 
 </div>
@@ -618,6 +617,7 @@ function renderPicker(){
 
 let pendingPlayerName = null;
 function pickPlayer(name){
+  if(TEAM === LEGACY_TEAM_CODE){ selectPlayer(name); return; }  // drużyna główna: bez PIN-u zawodnika, jako jedyny wyjątek
   const entry = roster.find(p=> slug(p.name)===slug(name));
   pendingPlayerName = name;
   document.getElementById('pickerScreen').style.display = 'none';
@@ -1163,11 +1163,12 @@ async function unlockCoach(){
 function renderRosterList(){
   const wrap = document.getElementById('rosterListWrap');
   if(!roster.length){ wrap.innerHTML = '<p class="section-sub">Lista jest pusta — zaimportuj zawodników powyżej.</p>'; return; }
+  const isLegacyTeam = TEAM === LEGACY_TEAM_CODE;
   wrap.innerHTML = '<p class="section-sub" style="margin-bottom:8px;">Na liście: '+roster.length+' zawodników</p>' +
     roster.map(p=>
       '<div class="coach-activity-row"><div class="info"><div class="name">'+escapeHtml(p.name)+'</div>' +
-      '<div class="pts">'+(p.pin ? 'PIN ustawiony' : 'PIN nieustawiony — poprosi o niego przy pierwszym wejściu')+'</div></div>' +
-      '<button class="icon-btn" data-resetpin="'+escapeHtml(p.name)+'" title="Zresetuj PIN">🔑</button>' +
+      '<div class="pts">'+(isLegacyTeam ? 'PIN nie wymagany (drużyna główna)' : (p.pin ? 'PIN ustawiony' : 'PIN nieustawiony — poprosi o niego przy pierwszym wejściu'))+'</div></div>' +
+      (isLegacyTeam ? '' : '<button class="icon-btn" data-resetpin="'+escapeHtml(p.name)+'" title="Zresetuj PIN">🔑</button>') +
       '<button class="icon-btn" data-remove="'+escapeHtml(p.name)+'" title="Usuń z listy">🗑️</button></div>'
     ).join('');
   wrap.querySelectorAll('[data-remove]').forEach(btn=>{
@@ -1317,16 +1318,38 @@ async function handleAdminAction(action, code){
     window.open(teamShareUrl(code), '_blank');
   }else if(action==='resetpin'){
     if(!confirm('Zresetować PIN trenera dla drużyny "'+code+'"? Przy najbliższym wejściu trener ustawi nowy.')) return;
-    try{ await window.storage.delete(teamKeyFor(code,'coach_pin')); }catch(e){ console.error(e); }
+    try{
+      await window.storage.delete(teamKeyFor(code,'coach_pin'));
+      alert('✓ Zresetowano PIN trenera dla drużyny "'+code+'".');
+    }catch(e){
+      console.error(e);
+      alert('Błąd podczas resetowania PIN-u: '+(e && e.message ? e.message : e));
+    }
     renderAdminTeams();
   }else if(action==='delete'){
-    if(!confirm('UWAGA: to nieodwracalnie usunie WSZYSTKIE dane drużyny "'+code+'" (skład, aktywności, wyniki, PIN trenera). Kontynuować?')) return;
-    if(!confirm('Na pewno? Tej operacji nie da się cofnąć.')) return;
+    const typed = prompt('To nieodwracalnie usunie WSZYSTKIE dane drużyny „'+code+'” (skład, aktywności, wyniki, PIN trenera).\n\nWpisz dokładny kod drużyny, żeby potwierdzić:');
+    if(typed === null) return;
+    if(typed.trim().toUpperCase() !== code){ alert('Kod się nie zgadza — anulowano usuwanie.'); return; }
     try{
       const list = await window.storage.list('team:'+code+':', true);
       const keys = (list && list.keys) ? list.keys : [];
-      for(const key of keys){ try{ await window.storage.delete(key); }catch(e){} }
-    }catch(e){ console.error(e); }
+      if(!keys.length){
+        alert('Nie znaleziono żadnych danych dla kodu „'+code+'” — być może zostały już usunięte.');
+        renderAdminTeams();
+        return;
+      }
+      for(const key of keys){ await window.storage.delete(key); }
+      const check = await window.storage.list('team:'+code+':', true);
+      const remaining = (check && check.keys) ? check.keys.length : 0;
+      if(remaining > 0){
+        alert('Nie udało się usunąć wszystkich danych drużyny (pozostało '+remaining+' wpisów). Sprawdź reguły Firestore — mogą blokować kasowanie danych.');
+      }else{
+        alert('✓ Drużyna „'+code+'” została usunięta ('+keys.length+' wpisów).');
+      }
+    }catch(e){
+      console.error(e);
+      alert('Błąd podczas usuwania drużyny: '+(e && e.message ? e.message : e));
+    }
     renderAdminTeams();
   }
 }
@@ -1407,7 +1430,13 @@ document.getElementById('copyTeamLinkBtn').addEventListener('click', async ()=>{
 });
 
 async function init(){
-  if(ADMIN_MODE) document.getElementById('navAdminBtn').style.display = '';
+  if(ADMIN_MODE){
+    // Tryb administratora pokazuje wyłącznie panel admina — bez reszty apki i bez
+    // ładowania danych żadnej konkretnej drużyny.
+    document.querySelector('nav.bottom').style.display = 'none';
+    await activateView('view-admin');
+    return;
+  }
   renderTeamCodeBox();
   await Promise.all([loadRoster(), loadActivities(), loadAllChecks()]);
   renderPicker();

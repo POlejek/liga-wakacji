@@ -178,6 +178,15 @@
 
   /* ---------- Config warning banner ---------- */
   #cfgWarn{ background:var(--coral); color:#fff; padding:10px 14px; text-align:center; font-size:12.5px; font-weight:600; line-height:1.4;}
+
+  /* ---------- Welcome / invite landing ---------- */
+  .welcome-hero{ padding: 8px 2px 20px; }
+  .welcome-title{ font-family:var(--font-display); font-weight:400; font-size:28px; margin:6px 0 10px; letter-spacing:.01em; }
+  .welcome-lead{ font-size:14px; color:rgba(244,241,232,0.75); line-height:1.55; margin:0 0 22px; }
+  .welcome-steps{ display:flex; flex-direction:column; gap:12px; margin-bottom:24px; }
+  .welcome-step{ display:flex; gap:12px; align-items:flex-start; background:var(--navy-panel); border:1px solid var(--line); border-radius:12px; padding:13px 14px; font-size:13.5px; line-height:1.45; color:rgba(244,241,232,0.85); }
+  .welcome-step b{ color:var(--chalk); }
+  .welcome-step-num{ flex-shrink:0; width:26px; height:26px; border-radius:50%; background:var(--amber); color:var(--navy); font-family:var(--font-mono); font-weight:700; font-size:14px; display:flex; align-items:center; justify-content:center; }
 </style>
 </head>
 <body>
@@ -353,9 +362,34 @@
         </div>
       </div>
       <div id="adminPanel" style="display:none;">
+        <div class="form-panel">
+          <h2 class="section-title" style="margin-bottom:6px;">Link zapraszający drużyny</h2>
+          <p class="section-sub" style="margin-bottom:10px;">Wyślij ten link każdemu, kto chce założyć własną drużynę. Otworzy stronę z instrukcją i przyciskiem do stworzenia nowej, osobnej drużyny.</p>
+          <button class="btn ghost" id="copyInviteLinkBtn" style="width:auto; padding:8px 16px;">Kopiuj link zapraszający</button>
+          <p class="msg" id="inviteLinkMsg"></p>
+        </div>
         <h2 class="section-title">Wszystkie drużyny</h2>
         <p class="section-sub">Pełna lista drużyn utworzonych w tej instancji apki.</p>
         <div id="adminTeamsWrap"><div class="loading">Ładowanie…</div></div>
+      </div>
+    </section>
+
+    <!-- VIEW: POWITANIE / ZAPROSZENIE (tylko z ?zaloz w linku) -->
+    <section class="view" id="view-welcome">
+      <div class="welcome-hero">
+        <h2 class="welcome-title">Załóż swoją drużynę</h2>
+        <p class="welcome-lead">Liga Wakacji to wspólny dziennik aktywności dla drużyny. Trener układa listę zadań i przyznaje punkty, zawodnicy codziennie odhaczają, co zrobili, a tabela sama pokazuje, kto prowadzi.</p>
+
+        <div class="welcome-steps">
+          <div class="welcome-step"><span class="welcome-step-num">1</span><div>Kliknij <b>„Stwórz swoją drużynę”</b> — dostaniesz własną, pustą drużynę z unikalnym kodem.</div></div>
+          <div class="welcome-step"><span class="welcome-step-num">2</span><div>Ustaw swój <b>PIN trenera</b> — zabezpiecza panel przed zmianami przez zawodników.</div></div>
+          <div class="welcome-step"><span class="welcome-step-num">3</span><div>Dodaj <b>aktywności</b> i <b>zawodników</b> w panelu trenera.</div></div>
+          <div class="welcome-step"><span class="welcome-step-num">4</span><div>Skopiuj <b>link do swojej drużyny</b> (widoczny w panelu trenera) i wyślij go zawodnikom.</div></div>
+        </div>
+
+        <button class="btn" id="createTeamBtn">Stwórz swoją drużynę</button>
+        <p class="msg" id="createTeamMsg"></p>
+        <p class="disclaimer" style="text-align:center; margin-top:18px;">Każda drużyna ma osobne dane — nie widzisz innych drużyn ani one Ciebie.</p>
       </div>
     </section>
 
@@ -1260,6 +1294,26 @@ function releaseForcedCoachSetup(){
   history.replaceState(null, '', url.toString());
 }
 
+// ---------- strona powitalna / zaproszenie (ogólnodostępny link ?zaloz) ----------
+const WELCOME_MODE = new URLSearchParams(location.search).has('zaloz');
+function inviteUrl(){ return location.origin + location.pathname + '?zaloz'; }
+document.getElementById('createTeamBtn').addEventListener('click', async (e)=>{
+  const btn = e.currentTarget;
+  const msg = document.getElementById('createTeamMsg');
+  btn.disabled = true;
+  msg.textContent = 'Tworzę drużynę…';
+  msg.className = 'msg';
+  try{
+    const code = await generateUniqueTeamCode();
+    location.href = location.pathname + '?team=' + encodeURIComponent(code) + '&new=1';
+  }catch(err){
+    console.error(err);
+    btn.disabled = false;
+    msg.textContent = 'Nie udało się utworzyć drużyny — spróbuj ponownie.';
+    msg.className = 'msg err';
+  }
+});
+
 // ---------- panel administratora (widok wszystkich drużyn, dostępny tylko z ?admin=1) ----------
 const ADMIN_MODE = new URLSearchParams(location.search).has('admin');
 let adminUnlocked = false;
@@ -1380,6 +1434,18 @@ function unlockAdmin(){
   document.getElementById('adminPanel').style.display='block';
   renderAdminTeams();
 }
+document.getElementById('copyInviteLinkBtn').addEventListener('click', async ()=>{
+  const msg = document.getElementById('inviteLinkMsg');
+  const url = inviteUrl();
+  try{
+    await navigator.clipboard.writeText(url);
+    msg.textContent = '✓ Skopiowano: '+url;
+    msg.className = 'msg ok';
+  }catch(e){
+    msg.textContent = 'Link zapraszający: '+url;
+    msg.className = 'msg';
+  }
+});
 async function initAdminPinScreen(){
   const storedPin = await loadAdminPin();
   const title = document.getElementById('adminPinTitle');
@@ -1430,6 +1496,14 @@ document.getElementById('copyTeamLinkBtn').addEventListener('click', async ()=>{
 });
 
 async function init(){
+  if(WELCOME_MODE){
+    // Ogólnodostępna strona zaproszenia — tylko instrukcja + przycisk „Stwórz drużynę”,
+    // bez reszty apki i bez wchodzenia do żadnej drużyny.
+    document.querySelector('nav.bottom').style.display = 'none';
+    document.getElementById('whoPill').style.display = 'none';
+    await activateView('view-welcome');
+    return;
+  }
   if(ADMIN_MODE){
     // Tryb administratora pokazuje wyłącznie panel admina — bez reszty apki i bez
     // ładowania danych żadnej konkretnej drużyny.

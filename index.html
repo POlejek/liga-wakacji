@@ -172,6 +172,7 @@
   }
   nav.bottom button .icon{ font-size:20px; }
   nav.bottom button.active{ color:var(--amber); }
+  nav.bottom button:disabled{ opacity:.3; cursor:default; }
 
   .loading{ text-align:center; padding:40px; color:rgba(244,241,232,0.4); font-family:var(--font-mono); font-size:13px;}
 
@@ -340,6 +341,24 @@
       </div>
     </section>
 
+    <!-- VIEW: ADMIN (tylko z ?admin=1 w linku) -->
+    <section class="view" id="view-admin">
+      <div id="adminLocked">
+        <div class="pin-box">
+          <h2 class="section-title" id="adminPinTitle">Panel administratora</h2>
+          <p class="section-sub" id="adminPinSub">Podaj PIN administratora.</p>
+          <div class="field"><input type="password" inputmode="numeric" id="adminPinInput" placeholder="••••" maxlength="8"></div>
+          <button class="btn" id="adminPinSubmitBtn">Odblokuj</button>
+          <p class="msg" id="adminPinMsg"></p>
+        </div>
+      </div>
+      <div id="adminPanel" style="display:none;">
+        <h2 class="section-title">Wszystkie drużyny</h2>
+        <p class="section-sub">Pełna lista drużyn utworzonych w tej instancji apki.</p>
+        <div id="adminTeamsWrap"><div class="loading">Ładowanie…</div></div>
+      </div>
+    </section>
+
   </main>
 
   <div id="toast"></div>
@@ -348,6 +367,7 @@
     <button data-view="view-activities" class="active"><span class="icon">📋</span>Aktywności</button>
     <button data-view="view-table"><span class="icon">🏆</span>Tabela</button>
     <button data-view="view-coach"><span class="icon">🔐</span>Trener</button>
+    <button data-view="view-admin" id="navAdminBtn" style="display:none;"><span class="icon">🛠️</span>Admin</button>
   </nav>
 
 </div>
@@ -678,7 +698,7 @@ document.getElementById('newTeamLink').addEventListener('click', async (e)=>{
   e.preventDefault();
   if(!confirm('Założyć nową drużynę? Zostaniesz przeniesiony do pustego panelu nowej drużyny — z osobnym składem, aktywnościami i PIN-em trenera.')) return;
   const code = await generateUniqueTeamCode();
-  location.href = location.pathname + '?team=' + encodeURIComponent(code);
+  location.href = location.pathname + '?team=' + encodeURIComponent(code) + '&new=1';
 });
 
 // ---------- rendering: activities screen ----------
@@ -1126,6 +1146,7 @@ document.getElementById('pinSubmitBtn').addEventListener('click', async ()=>{
 });
 async function unlockCoach(){
   coachUnlocked = true;
+  releaseForcedCoachSetup();
   document.getElementById('coachLocked').style.display='none';
   document.getElementById('coachPanel').style.display='block';
   renderEmojiSelect(EMOJI_OPTS[0]);
@@ -1209,10 +1230,143 @@ async function initPinScreen(){
   const sub = document.getElementById('pinSub');
   if(!storedPin){
     title.textContent = 'Ustaw PIN trenera';
-    sub.textContent = 'To pierwsze wejście — wybierz PIN, który zabezpieczy panel przed zmianami przez zawodników.';
+    sub.textContent = forcedCoachSetup
+      ? 'Drużyna została właśnie założona — zanim udostępnisz link komukolwiek, ustaw swój PIN trenera, żeby zabezpieczyć panel tylko dla siebie.'
+      : 'To pierwsze wejście — wybierz PIN, który zabezpieczy panel przed zmianami przez zawodników.';
   }else{
     title.textContent = 'Panel trenera';
     sub.textContent = 'Podaj PIN, żeby zarządzać aktywnościami.';
+  }
+}
+
+// ---------- wymuszenie ustawienia PIN-u trenera zaraz po założeniu nowej drużyny ----------
+const NEW_TEAM_SETUP = new URLSearchParams(location.search).has('new');
+let forcedCoachSetup = false;
+
+function enterForcedCoachSetup(){
+  forcedCoachSetup = true;
+  document.querySelectorAll('nav.bottom button').forEach(b=>{
+    if(b.dataset.view !== 'view-coach') b.disabled = true;
+  });
+  activateView('view-coach');
+}
+function releaseForcedCoachSetup(){
+  if(!forcedCoachSetup) return;
+  forcedCoachSetup = false;
+  document.querySelectorAll('nav.bottom button').forEach(b=> b.disabled = false);
+  const url = new URL(location.href);
+  url.searchParams.delete('new');
+  history.replaceState(null, '', url.toString());
+}
+
+// ---------- panel administratora (widok wszystkich drużyn, dostępny tylko z ?admin=1) ----------
+const ADMIN_MODE = new URLSearchParams(location.search).has('admin');
+let adminUnlocked = false;
+
+async function loadAdminPin(){
+  try{ const r = await window.storage.get('_admin_pin', true); return r ? r.value : null; }
+  catch(e){ return null; }
+}
+async function saveAdminPin(pin){ try{ await window.storage.set('_admin_pin', pin, true); }catch(e){ console.error(e); } }
+
+async function listAllTeamCodes(){
+  const codes = new Set();
+  try{
+    const list = await window.storage.list('team:', true);
+    const keys = (list && list.keys) ? list.keys : [];
+    keys.forEach(key=>{
+      const code = key.slice('team:'.length).split(':')[0];
+      if(code) codes.add(code);
+    });
+  }catch(e){ console.error(e); }
+  return Array.from(codes).sort();
+}
+
+async function renderAdminTeams(){
+  const wrap = document.getElementById('adminTeamsWrap');
+  wrap.innerHTML = '<div class="loading">Ładowanie…</div>';
+  const otherCodes = await listAllTeamCodes();
+  const allCodes = [LEGACY_TEAM_CODE, ...otherCodes.filter(c=>c!==LEGACY_TEAM_CODE)];
+  const rows = [];
+  for(const code of allCodes){
+    let rosterCount = 0, hasPin = false;
+    try{
+      const r = await window.storage.get(teamKeyFor(code,'roster'), true);
+      rosterCount = r ? (JSON.parse(r.value)||[]).length : 0;
+    }catch(e){}
+    try{
+      const p = await window.storage.get(teamKeyFor(code,'coach_pin'), true);
+      hasPin = !!(p && p.value);
+    }catch(e){}
+    rows.push({code, rosterCount, hasPin});
+  }
+  wrap.innerHTML = rows.map(r=>{
+    const isLegacy = r.code===LEGACY_TEAM_CODE;
+    return '<div class="coach-activity-row" style="align-items:center;">' +
+      '<div class="info"><div class="name">'+escapeHtml(r.code)+(isLegacy?' (główna)':'')+'</div>' +
+      '<div class="pts">'+r.rosterCount+' zawodników · PIN trenera: '+(r.hasPin?'ustawiony':'nieustawiony')+'</div></div>' +
+      '<button class="icon-btn" data-admin-action="open" data-code="'+escapeHtml(r.code)+'" title="Otwórz">↗️</button>' +
+      '<button class="icon-btn" data-admin-action="resetpin" data-code="'+escapeHtml(r.code)+'" title="Resetuj PIN trenera">🔑</button>' +
+      (isLegacy ? '' : '<button class="icon-btn" data-admin-action="delete" data-code="'+escapeHtml(r.code)+'" title="Usuń drużynę">🗑️</button>') +
+    '</div>';
+  }).join('');
+}
+
+async function handleAdminAction(action, code){
+  if(action==='open'){
+    window.open(teamShareUrl(code), '_blank');
+  }else if(action==='resetpin'){
+    if(!confirm('Zresetować PIN trenera dla drużyny "'+code+'"? Przy najbliższym wejściu trener ustawi nowy.')) return;
+    try{ await window.storage.delete(teamKeyFor(code,'coach_pin')); }catch(e){ console.error(e); }
+    renderAdminTeams();
+  }else if(action==='delete'){
+    if(!confirm('UWAGA: to nieodwracalnie usunie WSZYSTKIE dane drużyny "'+code+'" (skład, aktywności, wyniki, PIN trenera). Kontynuować?')) return;
+    if(!confirm('Na pewno? Tej operacji nie da się cofnąć.')) return;
+    try{
+      const list = await window.storage.list('team:'+code+':', true);
+      const keys = (list && list.keys) ? list.keys : [];
+      for(const key of keys){ try{ await window.storage.delete(key); }catch(e){} }
+    }catch(e){ console.error(e); }
+    renderAdminTeams();
+  }
+}
+document.getElementById('adminTeamsWrap').addEventListener('click', (e)=>{
+  const btn = e.target.closest('[data-admin-action]');
+  if(!btn) return;
+  handleAdminAction(btn.dataset.adminAction, btn.dataset.code);
+});
+
+document.getElementById('adminPinSubmitBtn').addEventListener('click', async ()=>{
+  const val = document.getElementById('adminPinInput').value.trim();
+  const msg = document.getElementById('adminPinMsg');
+  if(!val){ msg.textContent='Wpisz PIN.'; msg.className='msg err'; return; }
+  const storedPin = await loadAdminPin();
+  if(!storedPin){
+    if(val.length < 4){ msg.textContent='PIN musi mieć min. 4 znaki.'; msg.className='msg err'; return; }
+    await saveAdminPin(val);
+    unlockAdmin();
+  }else if(val === storedPin){
+    unlockAdmin();
+  }else{
+    msg.textContent='Błędny PIN.'; msg.className='msg err';
+  }
+});
+function unlockAdmin(){
+  adminUnlocked = true;
+  document.getElementById('adminLocked').style.display='none';
+  document.getElementById('adminPanel').style.display='block';
+  renderAdminTeams();
+}
+async function initAdminPinScreen(){
+  const storedPin = await loadAdminPin();
+  const title = document.getElementById('adminPinTitle');
+  const sub = document.getElementById('adminPinSub');
+  if(!storedPin){
+    title.textContent = 'Ustaw PIN administratora';
+    sub.textContent = 'Pierwsze wejście — wybierz PIN, który zabezpieczy ten panel przed innymi.';
+  }else{
+    title.textContent = 'Panel administratora';
+    sub.textContent = 'Podaj PIN, żeby zobaczyć listę drużyn.';
   }
 }
 
@@ -1225,6 +1379,7 @@ async function activateView(viewId){
     renderTable();
   }
   if(viewId==='view-coach' && !coachUnlocked) initPinScreen();
+  if(viewId==='view-admin' && !adminUnlocked) initAdminPinScreen();
 }
 document.querySelectorAll('nav.bottom button').forEach(btn=>{
   btn.addEventListener('click', ()=> activateView(btn.dataset.view));
@@ -1252,10 +1407,15 @@ document.getElementById('copyTeamLinkBtn').addEventListener('click', async ()=>{
 });
 
 async function init(){
+  if(ADMIN_MODE) document.getElementById('navAdminBtn').style.display = '';
   renderTeamCodeBox();
   await Promise.all([loadRoster(), loadActivities(), loadAllChecks()]);
   renderPicker();
   renderTable();
+  if(NEW_TEAM_SETUP){
+    const storedPin = await loadPin();
+    if(!storedPin) enterForcedCoachSetup();
+  }
 }
 init();
 </script>

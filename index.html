@@ -203,6 +203,18 @@
           <button class="btn" style="width:auto; padding:0 16px;" id="addPlayerBtn">Dodaj</button>
         </div>
         <p class="disclaimer">To wspólny dziennik drużyny — wpisy i punkty widzi cała ekipa.</p>
+        <p class="disclaimer"><a href="#" id="newTeamLink" style="color:var(--amber);">Prowadzisz inną drużynę? Załóż nową →</a></p>
+      </div>
+
+      <div id="playerPinScreen" style="display:none;">
+        <div class="pin-box">
+          <h2 class="section-title" id="playerPinTitle">Podaj swój PIN</h2>
+          <p class="section-sub" id="playerPinSub">Podaj PIN, żeby kontynuować.</p>
+          <div class="field"><input type="password" inputmode="numeric" id="playerPinInput" placeholder="••••" maxlength="8"></div>
+          <button class="btn" id="playerPinSubmitBtn">Dalej</button>
+          <button class="btn ghost" id="playerPinBackBtn" style="margin-top:8px;">Wróć do listy</button>
+          <p class="msg" id="playerPinMsg"></p>
+        </div>
       </div>
 
       <div id="activitiesScreen" style="display:none;">
@@ -228,6 +240,13 @@
 
     <!-- VIEW: TRENER -->
     <section class="view" id="view-coach">
+      <div class="form-panel" id="teamCodeBox" style="text-align:center;">
+        <p class="section-sub" style="margin-bottom:6px;">Kod Twojej drużyny</p>
+        <p style="font-family:var(--font-mono); font-size:24px; font-weight:700; color:var(--amber); letter-spacing:.15em; margin:0 0 10px;" id="teamCodeText">–</p>
+        <button class="btn ghost" id="copyTeamLinkBtn" style="width:auto; padding:8px 16px;">Kopiuj link do drużyny</button>
+        <p class="msg" id="teamLinkMsg" style="text-align:center;"></p>
+      </div>
+
       <div id="coachLocked">
         <div class="pin-box">
           <h2 class="section-title" id="pinTitle">Panel trenera</h2>
@@ -438,6 +457,43 @@ function isActivityDone(a, checks, today){
 function isActivityLocked(a, checks){ return isExpired(a) || (!!a.once && hasAnyCheck(a.id, checks)); }
 function isActivityVisible(a, checks){ return a.active && (!isExpired(a) || hasAnyCheck(a.id, checks)); }
 
+// ---------- drużyny (multi-tenant) ----------
+const LEGACY_TEAM_CODE = 'GLOWNA';               // stała drużyna = dotychczasowe, nieprefiksowane dane
+const TEAM_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // bez znaków łatwych do pomylenia (0/O, 1/I)
+
+function resolveTeamCode(){
+  const params = new URLSearchParams(location.search);
+  const fromUrl = (params.get('team') || '').trim().toUpperCase();
+  if(fromUrl) return fromUrl;
+  try{
+    const fromStorage = localStorage.getItem('liga_team_code');
+    if(fromStorage) return fromStorage;
+  }catch(e){}
+  return LEGACY_TEAM_CODE;
+}
+const TEAM = resolveTeamCode();
+try{ localStorage.setItem('liga_team_code', TEAM); }catch(e){}
+
+function teamKeyFor(code, base){ return code===LEGACY_TEAM_CODE ? base : ('team:'+code+':'+base); }
+function k(base){ return teamKeyFor(TEAM, base); }
+
+function randomTeamCode(){
+  let s=''; for(let i=0;i<6;i++) s += TEAM_CODE_CHARS[Math.floor(Math.random()*TEAM_CODE_CHARS.length)];
+  return s;
+}
+async function generateUniqueTeamCode(){
+  for(let attempt=0; attempt<5; attempt++){
+    const code = randomTeamCode();
+    let exists = null;
+    try{ exists = await window.storage.get(teamKeyFor(code, 'activities'), true); }catch(e){}
+    if(!exists) return code;
+  }
+  return 'T'+Date.now().toString(36).toUpperCase();
+}
+function teamShareUrl(code){
+  return location.origin + location.pathname + '?team=' + encodeURIComponent(code);
+}
+
 let roster = [];
 let activities = [];
 let checksByPlayer = {};
@@ -449,46 +505,47 @@ let editingCheckTs = null;
 
 // ---------- storage helpers ----------
 async function loadRoster(){
-  try{ const r = await window.storage.get('roster', true); roster = r ? JSON.parse(r.value) : []; }
+  try{ const r = await window.storage.get(k('roster'), true); roster = r ? JSON.parse(r.value) : []; }
   catch(e){ roster = []; }
 }
-async function saveRoster(){ try{ await window.storage.set('roster', JSON.stringify(roster), true); }catch(e){ console.error(e); } }
+async function saveRoster(){ try{ await window.storage.set(k('roster'), JSON.stringify(roster), true); }catch(e){ console.error(e); } }
 
 async function loadActivities(){
   try{
-    const r = await window.storage.get('activities', true);
+    const r = await window.storage.get(k('activities'), true);
     activities = r ? JSON.parse(r.value) : null;
   }catch(e){ activities = null; }
   if(!activities){
     activities = DEFAULT_ACTIVITIES.slice();
-    try{ await window.storage.set('activities', JSON.stringify(activities), true); }catch(e){}
+    try{ await window.storage.set(k('activities'), JSON.stringify(activities), true); }catch(e){}
   }
   let needsMigration = false;
   activities.forEach((a,i)=>{ if(typeof a.order !== 'number'){ a.order = i; needsMigration = true; } });
   if(needsMigration){ try{ await saveActivities(); }catch(e){} }
 }
-async function saveActivities(){ try{ await window.storage.set('activities', JSON.stringify(activities), true); }catch(e){ console.error(e); } }
+async function saveActivities(){ try{ await window.storage.set(k('activities'), JSON.stringify(activities), true); }catch(e){ console.error(e); } }
 
 async function loadAllChecks(){
   checksByPlayer = {};
+  const prefix = k('checks:');
   try{
-    const list = await window.storage.list('checks:', true);
+    const list = await window.storage.list(prefix, true);
     const keys = (list && list.keys) ? list.keys : [];
-    for(const k of keys){
+    for(const key of keys){
       try{
-        const res = await window.storage.get(k, true);
-        if(res){ checksByPlayer[k.slice('checks:'.length)] = JSON.parse(res.value); }
+        const res = await window.storage.get(key, true);
+        if(res){ checksByPlayer[key.slice(prefix.length)] = JSON.parse(res.value); }
       }catch(e){}
     }
   }catch(e){ console.error(e); }
 }
-async function savePlayerChecks(key, checks){ await window.storage.set('checks:'+key, JSON.stringify(checks), true); }
+async function savePlayerChecks(playerKey, checks){ await window.storage.set(k('checks:'+playerKey), JSON.stringify(checks), true); }
 
 async function loadPin(){
-  try{ const r = await window.storage.get('coach_pin', true); return r ? r.value : null; }
+  try{ const r = await window.storage.get(k('coach_pin'), true); return r ? r.value : null; }
   catch(e){ return null; }
 }
-async function savePin(pin){ try{ await window.storage.set('coach_pin', pin, true); }catch(e){ console.error(e); } }
+async function savePin(pin){ try{ await window.storage.set(k('coach_pin'), pin, true); }catch(e){ console.error(e); } }
 
 // ---------- calculations ----------
 function calcStreak(checks){
@@ -534,13 +591,60 @@ function renderPicker(){
   }else{
     grid.innerHTML = roster.map(p => '<button class="picker-btn" data-name="'+escapeHtml(p.name)+'">'+escapeHtml(p.name)+'</button>').join('');
     grid.querySelectorAll('.picker-btn').forEach(btn=>{
-      btn.addEventListener('click', ()=> selectPlayer(btn.dataset.name));
+      btn.addEventListener('click', ()=> pickPlayer(btn.dataset.name));
     });
   }
 }
+
+let pendingPlayerName = null;
+function pickPlayer(name){
+  const entry = roster.find(p=> slug(p.name)===slug(name));
+  pendingPlayerName = name;
+  document.getElementById('pickerScreen').style.display = 'none';
+  document.getElementById('activitiesScreen').style.display = 'none';
+  document.getElementById('playerPinScreen').style.display = 'block';
+  document.getElementById('playerPinInput').value = '';
+  document.getElementById('playerPinMsg').textContent = '';
+  document.getElementById('playerPinInput').focus();
+  const title = document.getElementById('playerPinTitle');
+  const sub = document.getElementById('playerPinSub');
+  if(!entry || !entry.pin){
+    title.textContent = 'Ustaw swój PIN';
+    sub.textContent = 'To pierwsze wejście, '+name+' — wybierz PIN (min. 4 znaki), żeby zabezpieczyć swoje wyniki przed innymi.';
+  }else{
+    title.textContent = 'Cześć, '+name+'!';
+    sub.textContent = 'Podaj swój PIN, żeby kontynuować.';
+  }
+}
+document.getElementById('playerPinBackBtn').addEventListener('click', ()=>{
+  pendingPlayerName = null;
+  document.getElementById('playerPinScreen').style.display = 'none';
+  document.getElementById('pickerScreen').style.display = 'block';
+});
+document.getElementById('playerPinSubmitBtn').addEventListener('click', async ()=>{
+  const val = document.getElementById('playerPinInput').value.trim();
+  const msg = document.getElementById('playerPinMsg');
+  if(!pendingPlayerName) return;
+  if(!val){ msg.textContent='Wpisz PIN.'; msg.className='msg err'; return; }
+  const entry = roster.find(p=> slug(p.name)===slug(pendingPlayerName));
+  if(!entry){ msg.textContent='Coś poszło nie tak — wróć do listy i spróbuj ponownie.'; msg.className='msg err'; return; }
+  if(!entry.pin){
+    if(val.length < 4){ msg.textContent='PIN musi mieć min. 4 znaki.'; msg.className='msg err'; return; }
+    entry.pin = val;
+    try{ await saveRoster(); }catch(e){ console.error(e); }
+    await selectPlayer(pendingPlayerName);
+  }else if(val === entry.pin){
+    await selectPlayer(pendingPlayerName);
+  }else{
+    msg.textContent='Błędny PIN.'; msg.className='msg err';
+  }
+});
+
 async function selectPlayer(name){
   currentPlayer = name;
+  pendingPlayerName = null;
   document.getElementById('pickerScreen').style.display = 'none';
+  document.getElementById('playerPinScreen').style.display = 'none';
   document.getElementById('activitiesScreen').style.display = 'block';
   document.getElementById('whoPill').style.display = 'flex';
   document.getElementById('whoName').textContent = name;
@@ -550,6 +654,7 @@ async function selectPlayer(name){
 function deselectPlayer(){
   currentPlayer = null;
   document.getElementById('pickerScreen').style.display = 'block';
+  document.getElementById('playerPinScreen').style.display = 'none';
   document.getElementById('activitiesScreen').style.display = 'none';
   document.getElementById('whoPill').style.display = 'none';
   renderPicker();
@@ -561,13 +666,20 @@ document.getElementById('addPlayerBtn').addEventListener('click', async ()=>{
   if(!name) return;
   const key = slug(name);
   if(!roster.some(p=>slug(p.name)===key)){
-    roster.push({name});
+    roster.push({name, pin:null});
     await saveRoster();
   }
   input.value='';
-  await selectPlayer(name);
+  pickPlayer(name);
 });
 document.getElementById('switchPlayerBtn').addEventListener('click', deselectPlayer);
+
+document.getElementById('newTeamLink').addEventListener('click', async (e)=>{
+  e.preventDefault();
+  if(!confirm('Założyć nową drużynę? Zostaniesz przeniesiony do pustego panelu nowej drużyny — z osobnym składem, aktywnościami i PIN-em trenera.')) return;
+  const code = await generateUniqueTeamCode();
+  location.href = location.pathname + '?team=' + encodeURIComponent(code);
+});
 
 // ---------- rendering: activities screen ----------
 function renderActivitiesScreen(){
@@ -1032,7 +1144,9 @@ function renderRosterList(){
   if(!roster.length){ wrap.innerHTML = '<p class="section-sub">Lista jest pusta — zaimportuj zawodników powyżej.</p>'; return; }
   wrap.innerHTML = '<p class="section-sub" style="margin-bottom:8px;">Na liście: '+roster.length+' zawodników</p>' +
     roster.map(p=>
-      '<div class="coach-activity-row"><div class="info"><div class="name">'+escapeHtml(p.name)+'</div></div>' +
+      '<div class="coach-activity-row"><div class="info"><div class="name">'+escapeHtml(p.name)+'</div>' +
+      '<div class="pts">'+(p.pin ? 'PIN ustawiony' : 'PIN nieustawiony — poprosi o niego przy pierwszym wejściu')+'</div></div>' +
+      '<button class="icon-btn" data-resetpin="'+escapeHtml(p.name)+'" title="Zresetuj PIN">🔑</button>' +
       '<button class="icon-btn" data-remove="'+escapeHtml(p.name)+'" title="Usuń z listy">🗑️</button></div>'
     ).join('');
   wrap.querySelectorAll('[data-remove]').forEach(btn=>{
@@ -1043,6 +1157,15 @@ function renderRosterList(){
       try{ await saveRoster(); }catch(e){ console.error(e); }
       renderPicker(); renderTable(); renderRosterList(); renderCoachTable();
       renderResultsPlayerSelect(); renderResultsList();
+    });
+  });
+  wrap.querySelectorAll('[data-resetpin]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const name = btn.dataset.resetpin;
+      if(!confirm('Zresetować PIN dla "'+name+'"? Przy następnym wejściu będzie musiał/musiała ustawić nowy.')) return;
+      const p = roster.find(x=>x.name===name);
+      if(p){ p.pin = null; try{ await saveRoster(); }catch(e){ console.error(e); } }
+      renderRosterList();
     });
   });
 }
@@ -1061,7 +1184,7 @@ document.getElementById('rosterImportBtn').addEventListener('click', async ()=>{
     const key = slug(name);
     if(!key) return;
     if(roster.some(p=> slug(p.name) === key)){ skipped++; }
-    else{ roster.push({name}); added++; }
+    else{ roster.push({name, pin:null}); added++; }
   });
   try{
     await saveRoster();
@@ -1112,7 +1235,24 @@ document.getElementById('saveGoToTableBtn').addEventListener('click', ()=>{
 });
 
 // ---------- init ----------
+function renderTeamCodeBox(){
+  document.getElementById('teamCodeText').textContent = TEAM;
+}
+document.getElementById('copyTeamLinkBtn').addEventListener('click', async ()=>{
+  const msg = document.getElementById('teamLinkMsg');
+  const url = teamShareUrl(TEAM);
+  try{
+    await navigator.clipboard.writeText(url);
+    msg.textContent = '✓ Skopiowano: '+url;
+    msg.className = 'msg ok';
+  }catch(e){
+    msg.textContent = 'Nie udało się skopiować — link: '+url;
+    msg.className = 'msg err';
+  }
+});
+
 async function init(){
+  renderTeamCodeBox();
   await Promise.all([loadRoster(), loadActivities(), loadAllChecks()]);
   renderPicker();
   renderTable();

@@ -504,11 +504,20 @@ const DEFAULT_STREAK_MILESTONES = [
   {days:20, points:200}, {days:25, points:300}, {days:30, points:500}
 ];
 const DEFAULT_ACTIVITIES = [
-  {id:'a1', name:'Bieg 5 km', points:10, emoji:'🏃', active:true, order:0, group:null, once:false},
-  {id:'a2', name:'Rower 15 km', points:10, emoji:'🚴', active:true, order:1, group:null, once:false},
-  {id:'a3', name:'Pływanie 1 km', points:15, emoji:'🏊', active:true, order:2, group:null, once:false},
-  {id:'a4', name:'Mobilność bioder', points:5, emoji:'🦵', active:true, order:3, group:null, once:false},
-  {id:'a5', name:'Piłka / żonglerka', points:5, emoji:'⚽', active:true, order:4, group:null, once:false},
+  {id:'a1', name:'Bieg 3 km', points:5, emoji:'🏃', active:true, order:0, group:'Bieganie', once:false, deadline:null},
+  {id:'a2', name:'Bieg 5 km', points:10, emoji:'🏃', active:true, order:1, group:'Bieganie', once:false, deadline:null},
+  {id:'a3', name:'Bieg 10km', points:20, emoji:'🏃', active:true, order:2, group:'Bieganie', once:false, deadline:null},
+  {id:'a4', name:'Rower 15 km', points:10, emoji:'🚴', active:true, order:3, group:'Rower', once:false, deadline:null},
+  {id:'a5', name:'Rower 30km', points:25, emoji:'🚴', active:true, order:4, group:'Rower', once:false, deadline:null},
+  {id:'a6', name:'Pływanie 500m', points:10, emoji:'🏊', active:true, order:5, group:'Pływanie', once:false, deadline:null},
+  {id:'a7', name:'Pływanie 1 km', points:20, emoji:'🏊', active:true, order:6, group:'Pływanie', once:false, deadline:null},
+  {id:'a8', name:'Piłka/żonglerka - 50 kapek', points:10, emoji:'⚽', active:true, order:7, group:'Żonglerka', once:false, deadline:null},
+  {id:'a9', name:'Piłka / żonglerka - 100 kapek', points:15, emoji:'⚽', active:true, order:8, group:'Żonglerka', once:false, deadline:null},
+  {id:'a10', name:'Mobilność bioder', points:10, emoji:'🦵', active:true, order:9, group:null, once:false, deadline:null},
+  {id:'a11', name:'Trening ogólnorozwojowy - 20 minut', points:10, emoji:'🤸', active:true, order:10, group:null, once:false, deadline:null},
+  {id:'a12', name:'Trening siłowy - 20 minut', points:10, emoji:'🏋️', active:true, order:11, group:null, once:false, deadline:null},
+  {id:'a13', name:'Trening żonglerka rękami - 20 minut', points:15, emoji:'⭐', active:true, order:12, group:null, once:false, deadline:null},
+  {id:'a14', name:'Trening na skakance - 20 minut', points:20, emoji:'⭐', active:true, order:13, group:null, once:false, deadline:null},
 ];
 function sortedByOrder(list){ return list.slice().sort((a,b)=> (a.order||0)-(b.order||0)); }
 

@@ -593,11 +593,17 @@ async function loadRoster(){
 async function saveRoster(){ try{ await window.storage.set(k('roster'), JSON.stringify(roster), true); }catch(e){ console.error(e); } }
 
 async function loadActivities(){
+  let fetchFailed = false;
   try{
     const r = await window.storage.get(k('activities'), true);
     activities = r ? JSON.parse(r.value) : null;
-  }catch(e){ activities = null; }
+  }catch(e){ console.error(e); activities = null; fetchFailed = true; }
   if(!activities){
+    if(fetchFailed){
+      // Błąd odczytu (sieć/baza) — NIE nadpisuj ewentualnych istniejących danych domyślnymi.
+      activities = [];
+      return;
+    }
     activities = DEFAULT_ACTIVITIES.slice();
     try{ await window.storage.set(k('activities'), JSON.stringify(activities), true); }catch(e){}
   }
@@ -608,11 +614,17 @@ async function loadActivities(){
 async function saveActivities(){ try{ await window.storage.set(k('activities'), JSON.stringify(activities), true); }catch(e){ console.error(e); } }
 
 async function loadStreakMilestones(){
+  let fetchFailed = false;
   try{
     const r = await window.storage.get(k('streak_milestones'), true);
     streakMilestones = r ? JSON.parse(r.value) : null;
-  }catch(e){ streakMilestones = null; }
+  }catch(e){ console.error(e); streakMilestones = null; fetchFailed = true; }
   if(!streakMilestones){
+    if(fetchFailed){
+      // Błąd odczytu — NIE nadpisuj ewentualnych istniejących progów domyślnymi.
+      streakMilestones = [];
+      return;
+    }
     streakMilestones = DEFAULT_STREAK_MILESTONES.map(m=> ({id:uid(), days:m.days, points:m.points}));
     try{ await window.storage.set(k('streak_milestones'), JSON.stringify(streakMilestones), true); }catch(e){}
   }
@@ -637,8 +649,10 @@ async function loadAllChecks(){
 async function savePlayerChecks(playerKey, checks){ await window.storage.set(k('checks:'+playerKey), JSON.stringify(checks), true); }
 
 async function loadPin(){
-  try{ const r = await window.storage.get(k('coach_pin'), true); return r ? r.value : null; }
-  catch(e){ return null; }
+  // Uwaga: celowo BEZ try/catch — błąd odczytu ma przerwać wywołującego,
+  // żeby nie pomylić "PIN jeszcze nieustawiony" z "błąd sieci/bazy" (patrz initPinScreen/pinSubmitBtn).
+  const r = await window.storage.get(k('coach_pin'), true);
+  return r ? r.value : null;
 }
 async function savePin(pin){ try{ await window.storage.set(k('coach_pin'), pin, true); }catch(e){ console.error(e); } }
 
@@ -1283,7 +1297,9 @@ document.getElementById('pinSubmitBtn').addEventListener('click', async ()=>{
   const val = document.getElementById('pinInput').value.trim();
   const msg = document.getElementById('pinMsg');
   if(!val){ msg.textContent='Wpisz PIN.'; msg.className='msg err'; return; }
-  const storedPin = await loadPin();
+  let storedPin;
+  try{ storedPin = await loadPin(); }
+  catch(e){ console.error(e); msg.textContent='Błąd połączenia z bazą — spróbuj ponownie za chwilę.'; msg.className='msg err'; return; }
   if(!storedPin){
     if(val.length < 4){ msg.textContent='PIN musi mieć min. 4 znaki.'; msg.className='msg err'; return; }
     await savePin(val);
@@ -1377,9 +1393,22 @@ document.getElementById('rosterImportBtn').addEventListener('click', async ()=>{
   }
 });
 async function initPinScreen(){
-  const storedPin = await loadPin();
   const title = document.getElementById('pinTitle');
   const sub = document.getElementById('pinSub');
+  const msg = document.getElementById('pinMsg');
+  let storedPin;
+  try{ storedPin = await loadPin(); }
+  catch(e){
+    console.error(e);
+    // Bezpieczny wariant: przy błędzie odczytu NIE zakładaj "pierwsze wejście" (to mogłoby
+    // pozwolić przypadkowej osobie ustawić nowy PIN i nadpisać prawdziwy).
+    title.textContent = 'Panel trenera';
+    sub.textContent = 'Podaj PIN, żeby zarządzać aktywnościami.';
+    msg.textContent = 'Nie udało się połączyć z bazą — odśwież stronę i spróbuj ponownie.';
+    msg.className = 'msg err';
+    return;
+  }
+  msg.textContent = '';
   if(!storedPin){
     title.textContent = 'Ustaw PIN trenera';
     sub.textContent = forcedCoachSetup
@@ -1436,8 +1465,9 @@ const ADMIN_MODE = new URLSearchParams(location.search).has('admin');
 let adminUnlocked = false;
 
 async function loadAdminPin(){
-  try{ const r = await window.storage.get('_admin_pin', true); return r ? r.value : null; }
-  catch(e){ return null; }
+  // Celowo BEZ try/catch — patrz komentarz przy loadPin().
+  const r = await window.storage.get('_admin_pin', true);
+  return r ? r.value : null;
 }
 async function saveAdminPin(pin){ try{ await window.storage.set('_admin_pin', pin, true); }catch(e){ console.error(e); } }
 
@@ -1534,7 +1564,9 @@ document.getElementById('adminPinSubmitBtn').addEventListener('click', async ()=
   const val = document.getElementById('adminPinInput').value.trim();
   const msg = document.getElementById('adminPinMsg');
   if(!val){ msg.textContent='Wpisz PIN.'; msg.className='msg err'; return; }
-  const storedPin = await loadAdminPin();
+  let storedPin;
+  try{ storedPin = await loadAdminPin(); }
+  catch(e){ console.error(e); msg.textContent='Błąd połączenia z bazą — spróbuj ponownie za chwilę.'; msg.className='msg err'; return; }
   if(!storedPin){
     if(val.length < 4){ msg.textContent='PIN musi mieć min. 4 znaki.'; msg.className='msg err'; return; }
     await saveAdminPin(val);
@@ -1564,9 +1596,20 @@ document.getElementById('copyInviteLinkBtn').addEventListener('click', async ()=
   }
 });
 async function initAdminPinScreen(){
-  const storedPin = await loadAdminPin();
   const title = document.getElementById('adminPinTitle');
   const sub = document.getElementById('adminPinSub');
+  const msg = document.getElementById('adminPinMsg');
+  let storedPin;
+  try{ storedPin = await loadAdminPin(); }
+  catch(e){
+    console.error(e);
+    title.textContent = 'Panel administratora';
+    sub.textContent = 'Podaj PIN, żeby zobaczyć listę drużyn.';
+    msg.textContent = 'Nie udało się połączyć z bazą — odśwież stronę i spróbuj ponownie.';
+    msg.className = 'msg err';
+    return;
+  }
+  msg.textContent = '';
   if(!storedPin){
     title.textContent = 'Ustaw PIN administratora';
     sub.textContent = 'Pierwsze wejście — wybierz PIN, który zabezpieczy ten panel przed innymi.';
